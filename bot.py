@@ -57,12 +57,26 @@ def save_data():
             bot.send_document(DB_CHANNEL_ID, f, caption=f"🔄 Database Backup - {time.ctime()}")
     except: pass
 
-if os.path.exists(DB_FILE):
-    with open(DB_FILE, "r") as f:
-        try:
-            loaded = json.load(f)
-            data.update(loaded)
-        except: pass
+def load_data_from_channel():
+    global data
+    try:
+        # በቻናሉ ውስጥ የተላኩ የመጨረሻ 10 መልዕክቶችን ይፈትሻል
+        messages = bot.get_chat_history(DB_CHANNEL_ID, limit=10)
+        for m in messages:
+            if m.document and m.document.file_name == DB_FILE:
+                file_info = bot.get_file(m.document.file_id)
+                downloaded_file = bot.download_file(file_info.file_path)
+                with open(DB_FILE, 'wb') as new_file:
+                    new_file.write(downloaded_file)
+                
+                with open(DB_FILE, "r") as f:
+                    loaded = json.load(f)
+                    data.update(loaded)
+                print("✅ የቆየ ዳታ ከቻናል ላይ ተገኝቶ ተጭኗል!")
+                return True
+    except Exception as e:
+        print(f"⚠️ ዳታ ከቻናል ለመጫን አልተቻለም: {e}")
+    return False
 
 def get_user(uid, name="ደንበኛ"):
     uid = str(uid)
