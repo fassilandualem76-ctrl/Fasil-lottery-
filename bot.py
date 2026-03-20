@@ -22,7 +22,7 @@ def keep_alive():
     t.start()
 
 # --- 2. ኮንፊገሬሽን (Supabase & Bot) ---
-TOKEN = "8721334129:AAHuEJDpuZf5vZ0GzKGPfRALlG3cA1TUmF0"
+TOKEN = "8721334129:AAFmTDowBnko2xYiJl7TAUKrYR2f2S1uYrU"
 SUPABASE_URL = "https://aapxnuzwrkxbzsanatik.supabase.co"
 SUPABASE_KEY = "EyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhcHhudXp3cmt4YnpzYW5hdGlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5Njg0NDcsImV4cCI6MjA4OTU0NDQ0N30.FdM3KkTBit3b35wK9obuJvPUhetAWGwL_tqM4pgDM0k"
 
