@@ -352,8 +352,19 @@ def update_board_value(message, bid, action):
     except: bot.send_message(message.chat.id, "⚠️ ስህተት!")
 
 if __name__ == "__main__":
+    # 1. መጀመሪያ ከቻናል ዳታ መጫን
+    load_data_from_channel() 
+    
+    # 2. የዌብ ሰርቨሩን ማስነሳት
     keep_alive()
+    
+    # 3. ቦቱን ማስነሳት
     bot.remove_webhook()
     while True:
-        try: bot.polling(none_stop=True, interval=1, timeout=20)
-        except: time.sleep(5)
+        try:
+            bot.polling(none_stop=True, interval=1, timeout=20)
+        except Exception as e:
+            print(f"Bot Polling Error: {e}")
+            time.sleep(5)
+
+
