@@ -57,29 +57,36 @@ def save_data():
             bot.send_document(DB_CHANNEL_ID, f, caption=f"🔄 Database Backup - {time.ctime()}")
     except: pass
 
-def master_restore():
-    """ቦቱ ሲነሳ ከቴሌግራም ቻናል ባክአፕ ፈልጎ ይጭናል"""
-    global data
-    print("🔄 ዳታን ከቻናል መልሶ በመጫን ላይ...")
-    try:
-        # በቻናሉ ውስጥ ያሉ የመጨረሻ መልዕክቶችን ይፈትሻል
-        # ማሳሰቢያ፡ pyTelegramBotAPI የ get_chat_history ድጋፍ የለውም፣ ስለዚህ በ file_id መሞከር ይሻላል
-        # ነገር ግን ቦቱ በራሱ የላከውን ፋይል በ local storage (DB_FILE) ካገኘው ይጭነዋል
-        if os.path.exists(DB_FILE):
-            with open(DB_FILE, "r") as f:
-                temp_data = json.load(f)
-                data.update(temp_data)
-                print(f"✅ ስኬት! ዳታው ተጭኗል።")
-                return True
-    except Exception as e:
-        print(f"❌ ሪስቶር ስህተት: {e}")
-    return False
+# ቦቱ ሲነሳ Local File ካለ ያነባል
+if os.path.exists(DB_FILE):
+    with open(DB_FILE, "r") as f:
+        try:
+            loaded = json.load(f)
+            data.update(loaded)
+        except: pass
 
-# --- 4. የሰሌዳ ዲዛይንና ሌሎች ተግባራት (እንደላክኸው) ---
+# --- 4. Forward Restore Logic (አዲሱ ተግባር) ---
+@bot.message_handler(content_types=['document'])
+def handle_backup_file(message):
+    if message.from_user.id in ADMIN_IDS and message.document.file_name == DB_FILE:
+        try:
+            bot.send_message(message.chat.id, "🔄 የባክአፕ ፋይሉን እያነበብኩ ነው...")
+            file_info = bot.get_file(message.document.file_id)
+            downloaded_file = bot.download_file(file_info.file_path)
+            with open(DB_FILE, 'wb') as f:
+                f.write(downloaded_file)
+            global data
+            with open(DB_FILE, 'r') as f:
+                data.update(json.load(f))
+            bot.send_message(message.chat.id, f"✅ ዳታው ተመልሷል! {len(data['users'])} ተጠቃሚዎች ተጭነዋል።")
+            save_data()
+        except Exception as e:
+            bot.send_message(message.chat.id, f"❌ ስህተት፦ {e}")
+
+# --- 5. የተቀሩት የቦቱ ተግባራት (ምንም አልተነካም) ---
 def get_user(uid, name="ደንበኛ"):
     uid = str(uid)
-    if uid not in data["users"]:
-        data["users"][uid] = {"name": name, "wallet": 0}
+    if uid not in data["users"]: data["users"][uid] = {"name": name, "wallet": 0}
     return data["users"][uid]
 
 def main_menu_markup(uid):
@@ -97,24 +104,18 @@ def update_group_board(b_id):
         if str(i) in board["slots"]:
             u_name = board["slots"][str(i)]; short = u_name[:5]
             line += f"<code>{s_i}</code>🔴{short}\t\t\t\t"
-        else:
-            line += f"<code>{s_i}</code>⬜️\t\t\t\t\t\t"
-        if i % 2 == 0:
-            text += line + "\n"; line = ""
+        else: line += f"<code>{s_i}</code>⬜️\t\t\t\t\t\t"
+        if i % 2 == 0: text += line + "\n"; line = ""
     text += line + f"━━━━━━━━━━━━━━━━━━━━━\n🎁 <b>ሽልማት፦ {board['prize']}</b>\n🤖 @Fasil_assistant_bot"
     try:
-        if data["pinned_msgs"].get(b_id):
-            bot.edit_message_text(text, GROUP_ID, data["pinned_msgs"][b_id])
+        if data["pinned_msgs"].get(b_id): bot.edit_message_text(text, GROUP_ID, data["pinned_msgs"][b_id])
         else:
-            m = bot.send_message(GROUP_ID, text)
-            bot.pin_chat_message(GROUP_ID, m.message_id)
+            m = bot.send_message(GROUP_ID, text); bot.pin_chat_message(GROUP_ID, m.message_id)
             data["pinned_msgs"][b_id] = m.message_id; save_data()
     except:
-        m = bot.send_message(GROUP_ID, text)
-        bot.pin_chat_message(GROUP_ID, m.message_id)
+        m = bot.send_message(GROUP_ID, text); bot.pin_chat_message(GROUP_ID, m.message_id)
         data["pinned_msgs"][b_id] = m.message_id; save_data()
 
-# --- 5. Message Handlers (ከላይ የላክኸው እንዳለ) ---
 @bot.message_handler(commands=['start'])
 def welcome(message):
     uid = str(message.chat.id); user = get_user(uid, message.from_user.first_name)
@@ -124,21 +125,19 @@ def welcome(message):
                     f"🔸 <b>CBE:</b> <code>{active_pay['cbe']}</code>")
     bot.send_message(uid, welcome_text, reply_markup=main_menu_markup(uid))
 
-# ... (ሌሎች ተግባራት፡ shift, post, selection, admin_panel ወዘተ እንዳሉ ይቀጥላሉ)
 @bot.message_handler(func=lambda m: m.text == "🎮 ሰሌዳ ምረጥ")
 def show_boards(message):
     markup = types.InlineKeyboardMarkup(row_width=1)
     for b_id, b_info in data["boards"].items():
         if b_info["active"]:
             markup.add(types.InlineKeyboardButton(f"🎰 ሰሌዳ {b_id} | 🎫 {b_info['price']} ብር", callback_data=f"select_{b_id}"))
-    bot.send_message(message.chat.id, "<b>ለመጫወት የሚፈልጉትን ሰሌዳ ይምረጡ፦</b>", reply_markup=markup)
+    bot.send_message(message.chat.id, "<b>ሰሌዳ ይምረጡ፦</b>", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_listener(call):
     is_admin = call.from_user.id in ADMIN_IDS
     if call.data.startswith('select_'):
-        bid = call.data.split('_'); user = get_user(call.message.chat.id)
-        board = data["boards"][bid]
+        bid = call.data.split('_'); user = get_user(call.message.chat.id); board = data["boards"][bid]
         if user["wallet"] < board["price"]:
             bot.answer_callback_query(call.id, "⚠️ በቂ ሂሳብ የሎትም!", show_alert=True); return
         markup = types.InlineKeyboardMarkup(row_width=5)
@@ -169,20 +168,46 @@ def save_name(message, uid):
     data["users"][str(uid)]["name"] = message.text[:5]; save_data()
     bot.send_message(uid, f"✅ ተመዝግቧል!", reply_markup=main_menu_markup(uid))
 
-# --- 6. ዋና ማስነሻ ---
+@bot.message_handler(func=lambda m: m.text == "👤 ፕሮፋይል")
+def show_profile(message):
+    user = get_user(message.chat.id)
+    bot.send_message(message.chat.id, f"👤 <b>ፕሮፋይል</b>\n📛 ስም፦ {user['name']}\n💰 ቀሪ፦ {user['wallet']} ብር")
+
+@bot.message_handler(func=lambda m: m.text == "🎫 የያዝኳቸው ቁጥሮች")
+def my_numbers(message):
+    uid = str(message.chat.id); name = data["users"][uid]["name"]; found = False
+    text = "🎫 <b>የያዟቸው ቁጥሮች፦</b>\n\n"
+    for bid, binfo in data["boards"].items():
+        user_nums = [n for n, u in binfo["slots"].items() if u == name]
+        if user_nums: found = True; text += f"🎰 <b>ሰሌዳ {bid}:</b> {', '.join(user_nums)}\n"
+    if not found: text = "⚠️ እስካሁን ምንም ቁጥር አልያዙም!"
+    bot.send_message(uid, text)
+
+@bot.message_handler(func=lambda m: m.text == "⚙️ Admin Settings" and m.from_user.id in ADMIN_IDS)
+def admin_panel(message):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("🔄 ሰሌዳ አጽዳ (Reset)", callback_data="admin_reset"))
+    bot.send_message(message.chat.id, "🛠 <b>አድሚን ዳሽቦርድ</b>", reply_markup=markup)
+
+@bot.message_handler(content_types=['photo', 'text'])
+def handle_receipts(message):
+    if message.chat.type != 'private': return 
+    uid = str(message.chat.id)
+    if message.text in ["🎮 ሰሌዳ ምረጥ", "👤 ፕሮፋይል", "⚙️ Admin Settings", "🎫 የያዝኳቸው ቁጥሮች"]: return
+    bot.send_message(uid, "⏳ <b>ደረሰኝዎ ደርሶኛል...</b>")
+    markup = types.InlineKeyboardMarkup()
+    markup.row(types.InlineKeyboardButton("✅ አፅድቅ", callback_data=f"approve_{uid}"),
+               types.InlineKeyboardButton("❌ ውድቅ", callback_data=f"decline_{uid}"))
+    cap = f"📩 <b>አዲስ ደረሰኝ</b>\n👤 <b>ከ፦</b> {message.from_user.first_name}\n🆔 <code>{uid}</code>"
+    for adm in ADMIN_IDS:
+        try:
+            if message.photo: bot.send_photo(adm, message.photo[-1].file_id, caption=cap, reply_markup=markup)
+            else: bot.send_message(adm, f"{cap}\n📝 <code>{message.text}</code>", reply_markup=markup)
+        except: pass
+
 if __name__ == "__main__":
-    # 1. መጀመሪያ ዳታውን መጫን
-    master_restore()
-    
-    # 2. ሰርቨሩ እንዳይተኛ ማድረግ
     keep_alive()
-    
-    # 3. ቦቱን ማስነሳት
-    print("🚀 ቦቱ ስራ ጀምሯል...")
     bot.remove_webhook()
     while True:
-        try:
-            bot.polling(none_stop=True, interval=1, timeout=20)
-        except Exception as e:
-            print(f"Bot Polling Error: {e}")
-            time.sleep(5)
+        try: bot.polling(none_stop=True, interval=1, timeout=20)
+        except: time.sleep(5)
