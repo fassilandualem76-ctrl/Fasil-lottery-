@@ -1,5 +1,5 @@
-pymongo
-dnspython
 pyTelegramBotAPI==4.20.0
+supabase
 flask
+requests
 gunicorn
