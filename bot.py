@@ -5,15 +5,15 @@ import os
 from flask import Flask
 from threading import Thread
 import time
-# Supabase ላይ ዳታ ሴቭ ለማድረግ የሚያስፈልግ
 from supabase import create_client, Client
 
-# --- 1. Web Hosting ---
+# --- 1. Web Hosting (ለ Render ወሳኝ ነው) ---
 app = Flask('')
 @app.route('/')
 def home(): return "Fasil Lotto System is Active with Supabase! 🚀"
 
 def run():
+    # Render የሚሰጠውን PORT ይጠቀማል
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
@@ -22,11 +22,12 @@ def keep_alive():
     t.daemon = True
     t.start()
 
-# --- 2. ኮንፊገሬሽን (Supabase & Bot) ---
+# --- 2. ኮንፊገሬሽን (እኔ ራሴ አስገብቼዋለሁ) ---
 TOKEN = "8721334129:AAHuEJDpuZf5vZ0GzKGPfRALlG3cA1TUmF0"
 SUPABASE_URL = "https://aapxnuzwrkxbzsanatik.supabase.co"
 SUPABASE_KEY = "EyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhcHhudXp3cmt4YnpzYW5hdGlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5Njg0NDcsImV4cCI6MjA4OTU0NDQ0N30.FdM3KkTBit3b35wK9obuJvPUhetAWGwL_tqM4pgDM0k"
 
+# Supabase መገናኛ
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
@@ -41,7 +42,7 @@ PAYMENTS = {
     "assistant": {"tele": "0973416038", "cbe": "1000718691323"}
 }
 
-# --- 3. ዳታቤዝ አያያዝ (Supabase Store & Restore) ---
+# --- 3. ዳታቤዝ አያያዝ (Store & Restore) ---
 data = {
     "users": {},
     "current_shift": "me",
@@ -55,10 +56,10 @@ data = {
 
 def save_data():
     try:
-        # 1. መረጃውን ወደ Supabase መላክ (Store)
+        # Supabase ላይ ሴቭ ማድረግ
         supabase.table("game_data").upsert({"id": 1, "content": data}).execute()
         
-        # 2. ለተጨማሪ ጥንቃቄ ወደ ቻናል መላክ (Backup)
+        # Backup ወደ ቻናል መላክ
         with open("backup.json", "w") as f:
             json.dump(data, f)
         with open("backup.json", "rb") as f:
@@ -69,7 +70,7 @@ def save_data():
 def load_data():
     global data
     try:
-        # መረጃውን ከ Supabase መጫን (Restore)
+        # ከ Supabase ዳታ መጫን
         response = supabase.table("game_data").select("content").eq("id", 1).execute()
         if response.data and len(response.data) > 0:
             db_content = response.data["content"]
@@ -80,10 +81,7 @@ def load_data():
         print(f"❌ Restore Error: {e}")
     return False
 
-# ቦቱ ሲነሳ መጀመሪያ የቆየውን ዳታ ይጭናል
-load_data()
-
-# --- 4. ቦት ተግባራት (ያልተቀየሩ) ---
+# --- 4. ቦት ተግባራት (Logic) ---
 def get_user(uid, name="ደንበኛ"):
     uid = str(uid)
     if uid not in data["users"]:
@@ -120,8 +118,7 @@ def update_group_board(b_id):
         bot.pin_chat_message(GROUP_ID, m.message_id)
         data["pinned_msgs"][b_id] = m.message_id; save_data()
 
-# (ሌሎቹ Handlerዎች ማለትም Start, Profile, Admin Settings ወዘተ እንዳሉ ይቀጥላሉ...)
-
+# --- Handlers (አንተ የላክሃቸው እንዳሉ) ---
 @bot.message_handler(commands=['start'])
 def welcome(message):
     uid = str(message.chat.id); user = get_user(uid, message.from_user.first_name)
@@ -131,11 +128,49 @@ def welcome(message):
                     f"🔸 <b>CBE:</b> <code>{active_pay['cbe']}</code>\n\n⚠️ ደረሰኝ እዚህ ይላኩ።")
     bot.send_message(uid, welcome_text, reply_markup=main_menu_markup(uid))
 
-# (ቀሪውን ኮድህንም በዚህ መልኩ ሙሉ በሙሉ መጠቀም ትችላለህ)
+# (ሌሎቹ Handlerዎች እዚህ ጋር ይቀጥላሉ...)
+# ... [ቀሪው የቦቱ ኮድህ] ...
 
+@bot.message_handler(func=lambda m: m.text == "🎮 ሰሌዳ ምረጥ")
+def show_boards(message):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for b_id, b_info in data["boards"].items():
+        if b_info["active"]:
+            markup.add(types.InlineKeyboardButton(f"🎰 ሰሌዳ {b_id} | 🎫 {b_info['price']} ብር", callback_data=f"select_{b_id}"))
+    bot.send_message(message.chat.id, "<b>ለመጫወት የሚፈልጉትን ሰሌዳ ይምረጡ፦</b>", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_listener(call):
+    # (አንተ የላክኸው የካርልባክ ሊስተነር እዚህ ይገባል)
+    if call.data.startswith('select_'):
+        bid = call.data.split('_'); user = get_user(call.message.chat.id)
+        board = data["boards"][bid]
+        if user["wallet"] < board["price"]:
+            bot.answer_callback_query(call.id, "⚠️ በቂ ሂሳብ የሎትም!", show_alert=True); return
+        markup = types.InlineKeyboardMarkup(row_width=5)
+        btns = [types.InlineKeyboardButton(str(i), callback_data=f"pick_{bid}_{i}") for i in range(1, board["max"] + 1) if str(i) not in board["slots"]]
+        markup.add(*btns)
+        bot.edit_message_text(f"🎰 <b>ሰሌዳ {bid}</b>\nቁጥር ይምረጡ፦", call.message.chat.id, call.message.message_id, reply_markup=markup)
+    elif call.data.startswith('pick_'):
+        _, bid, num = call.data.split('_')
+        # እዚህ ጋር ዳታውን ሴቭ የማድረጊያ ሎጅክ መኖሩን እርግጠኛ ሁን
+        uid = str(call.message.chat.id); user = get_user(uid)
+        if user["wallet"] >= data["boards"][bid]["price"]:
+            data["users"][uid]["wallet"] -= data["boards"][bid]["price"]
+            data["boards"][bid]["slots"][num] = user["name"]
+            save_data() # ዳታውን ወዲያው ሴቭ ያደርጋል
+            update_group_board(bid)
+            bot.answer_callback_query(call.id, f"✅ ቁጥር {num} ተመርጧል!")
+            bot.edit_message_text(f"✅ ተመዝግቧል! ቀሪ፦ {data['users'][uid]['wallet']} ብር", uid, call.message.message_id)
+
+# --- ዋና ማስነሻ ---
 if __name__ == "__main__":
+    load_data() # ቦቱ ሲነሳ ዳታውን ከ Supabase ያመጣል
     keep_alive()
     bot.remove_webhook()
     while True:
-        try: bot.polling(none_stop=True, interval=1, timeout=20)
-        except: time.sleep(5)
+        try:
+            bot.polling(none_stop=True, interval=1, timeout=20)
+        except Exception as e:
+            print(f"Polling Error: {e}")
+            time.sleep(5)
