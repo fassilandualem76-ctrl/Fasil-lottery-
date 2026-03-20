@@ -59,27 +59,46 @@ def save_data():
     except Exception as e:
         print(f"❌ ሴቭ ስህተት: {e}")
 
-def master_restore():
+import requests
+
+def universal_restore():
     global data
-    print("🔄 ዳታን ከቻናል መልሶ በመጫን ላይ...")
+    print("🔄 ዳታን ከቻናል በ Universal መንገድ በመጫን ላይ...")
     try:
-        messages = bot.get_chat_history(DB_CHANNEL_ID, limit=20)
-        for m in messages:
-            if m.document and m.document.file_name == DB_FILE:
-                file_info = bot.get_file(m.document.file_id)
-                downloaded_file = bot.download_file(file_info.file_path)
-                with open(DB_FILE, 'wb') as f:
-                    f.write(downloaded_file)
-                with open(DB_FILE, "r") as f:
-                    temp_data = json.load(f)
-                    if temp_data.get("users"):
-                        data.update(temp_data)
-                        print(f"✅ ስኬት! {len(data['users'])} ተጠቃሚዎች ተጭነዋል።")
-                        return True
+        # ቻናሉ ላይ የተላኩ የመጨረሻዎቹን ፋይሎች ለማግኘት
+        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates?allowed_updates=['channel_post']"
+        response = requests.get(url).json()
+        
+        if response.get("ok"):
+            # የመጨረሻዎቹን መልዕክቶች በሪቨርስ (ከአዲስ ወደ ኋላ) ይፈትሻል
+            updates = response.get("result", [])
+            for update in reversed(updates):
+                msg = update.get("channel_post")
+                if msg and msg.get("document") and msg["document"]["file_name"] == DB_FILE:
+                    file_id = msg["document"]["file_id"]
+                    file_info = bot.get_file(file_id)
+                    downloaded_file = bot.download_file(file_info.file_path)
+                    
+                    with open(DB_FILE, 'wb') as f:
+                        f.write(downloaded_file)
+                    
+                    with open(DB_FILE, "r") as f:
+                        temp_data = json.load(f)
+                        if temp_data.get("users"):
+                            data.update(temp_data)
+                            print(f"✅ ስኬት! {len(data['users'])} ተጠቃሚዎች በዩኒቨርሳል መንገድ ተጭነዋል።")
+                            return True
+        
+        # ቻናሉ ላይ መልዕክት ከሌለ ሎካል ፋይሉን ይሞክራል
+        if os.path.exists(DB_FILE):
+            with open(DB_FILE, "r") as f:
+                data.update(json.load(f))
+                print("✅ ዳታው ከሎካል ፋይል ተጭኗል!")
+                return True
+                
     except Exception as e:
         print(f"❌ ሪስቶር ስህተት: {e}")
     return False
-
 
 def get_user(uid, name="ደንበኛ"):
     uid = str(uid)
@@ -354,21 +373,37 @@ def update_board_value(message, bid, action):
         save_data(); bot.send_message(message.chat.id, "✅ ተቀይሯል!"); update_group_board(bid)
     except: bot.send_message(message.chat.id, "⚠️ ስህተት!")
 
+import threading
+
+# በየ 5 ደቂቃው ራሱን ፒንግ የሚያደርግ ፋንክሽን (ሰርቨሩ እንዳይተኛ)
+def ping_self():
+    while True:
+        try:
+            # ሰርቨሩ የራሱን ዩአርኤል (URL) በመጥራት ነቅቶ እንዲቆይ ያደርጋል
+            requests.get("https://fasil-bingo.onrender.com") 
+            print("📡 Ping Sent: Server is Awake!")
+        except:
+            pass
+        time.sleep(300) # 5 ደቂቃ (300 ሰከንድ)
+
 if __name__ == "__main__":
-    # 1. መጀመሪያ ዳታውን መጫን
-    master_restore()
+    # 1. መጀመሪያ ዳታውን ከቻናል ፈልጎ መጫን
+    universal_restore() 
     
-    # 2. ሰርቨሩ እንዳይተኛ ማድረግ
-    keep_alive()
+    # 2. Flask ሰርቨሩን በባክግራውንድ ማስነሳት
+    threading.Thread(target=keep_alive).start()
     
-    # 3. ቦቱን ማስነሳት
-    print("🚀 ቦቱ ስራ ጀምሯል...")
+    # 3. ፒንግ የሚያደርገውን ሲስተም በባክግራውንድ ማስነሳት
+    threading.Thread(target=ping_self).start()
+    
+    # 4. ቦቱን ማስነሳት
+    print("🚀 ቦቱ በይፋ ስራ ጀምሯል...")
     bot.remove_webhook()
     while True:
         try:
             bot.polling(none_stop=True, interval=1, timeout=20)
         except Exception as e:
-            print(f"Bot Polling Error: {e}")
+            print(f"❌ Bot Polling Error: {e}")
             time.sleep(5)
 
 
