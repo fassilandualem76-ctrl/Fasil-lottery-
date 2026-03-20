@@ -5,11 +5,14 @@ import os
 from flask import Flask
 from threading import Thread
 import time
+import requests
+import threading
+from pymongo import MongoClient
 
-# --- 1. Web Hosting ---
+# --- 1. Web Hosting & Connectivity ---
 app = Flask('')
 @app.route('/')
-def home(): return "Fasil Lotto System is Active!"
+def home(): return "Fasil Lotto System is Active with MongoDB!"
 
 def run():
     port = int(os.environ.get("PORT", 8080))
@@ -20,13 +23,18 @@ def keep_alive():
     t.daemon = True
     t.start()
 
-# --- 2. ቦት መረጃዎች ---
+# --- 2. ቦት እና ዳታቤዝ መረጃዎች ---
 TOKEN = "8721334129:AAFmTDowBnko2xYiJl7TAUKrYR2f2S1uYrU"
+MONGO_URL = "mongodb+srv://fassilandualem76_db_user:68yAgMwYuR232BvN@lottery.jigg9z4.mongodb.net/?appName=Lottery"
+
+# MongoDB Connection
+client = MongoClient(MONGO_URL)
+db = client['fasil_bingo_db']
+collection = db['game_data']
+
 MY_ID = 8488592165          
 ASSISTANT_ID = 7072611117   
 GROUP_ID = -1003881429974
-DB_CHANNEL_ID = -1003747262103
-
 ADMIN_IDS = [MY_ID, ASSISTANT_ID]
 
 PAYMENTS = {
@@ -36,8 +44,7 @@ PAYMENTS = {
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
-# --- 3. ዳታቤዝ አያያዝ ---
-DB_FILE = "fasil_db.json"
+# --- 3. ዳታቤዝ አያያዝ (MongoDB) ---
 data = {
     "users": {},
     "current_shift": "me",
@@ -50,60 +57,37 @@ data = {
 }
 
 def save_data():
+    """ሁሉንም ዳታ MongoDB ላይ በቋሚነት ሴቭ ያደርጋል"""
     try:
-        with open(DB_FILE, "w") as f:
-            json.dump(data, f)
-        with open(DB_FILE, "rb") as f:
-            status = f"🔄 Backup - {len(data.get('users', {}))} Users | {time.ctime()}"
-            bot.send_document(DB_CHANNEL_ID, f, caption=status)
+        collection.update_one(
+            {"_id": "master_data"}, 
+            {"$set": {"content": data}}, 
+            upsert=True
+        )
+        print("✅ ዳታው በ MongoDB ላይ በቋሚነት ተቀምጧል!")
     except Exception as e:
-        print(f"❌ ሴቭ ስህተት: {e}")
+        print(f"❌ MongoDB ሴቭ ስህተት: {e}")
 
-import requests
-
-def universal_restore():
+def load_data():
+    """ቦቱ ሲነሳ ዳታውን ከ MongoDB ይጭናል"""
     global data
-    print("🔄 ዳታን ከቻናል በ Universal መንገድ በመጫን ላይ...")
     try:
-        # ቻናሉ ላይ የተላኩ የመጨረሻዎቹን ፋይሎች ለማግኘት
-        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates?allowed_updates=['channel_post']"
-        response = requests.get(url).json()
-        
-        if response.get("ok"):
-            # የመጨረሻዎቹን መልዕክቶች በሪቨርስ (ከአዲስ ወደ ኋላ) ይፈትሻል
-            updates = response.get("result", [])
-            for update in reversed(updates):
-                msg = update.get("channel_post")
-                if msg and msg.get("document") and msg["document"]["file_name"] == DB_FILE:
-                    file_id = msg["document"]["file_id"]
-                    file_info = bot.get_file(file_id)
-                    downloaded_file = bot.download_file(file_info.file_path)
-                    
-                    with open(DB_FILE, 'wb') as f:
-                        f.write(downloaded_file)
-                    
-                    with open(DB_FILE, "r") as f:
-                        temp_data = json.load(f)
-                        if temp_data.get("users"):
-                            data.update(temp_data)
-                            print(f"✅ ስኬት! {len(data['users'])} ተጠቃሚዎች በዩኒቨርሳል መንገድ ተጭነዋል።")
-                            return True
-        
-        # ቻናሉ ላይ መልዕክት ከሌለ ሎካል ፋይሉን ይሞክራል
-        if os.path.exists(DB_FILE):
-            with open(DB_FILE, "r") as f:
-                data.update(json.load(f))
-                print("✅ ዳታው ከሎካል ፋይል ተጭኗል!")
-                return True
-                
+        record = collection.find_one({"_id": "master_data"})
+        if record:
+            data.update(record["content"])
+            print(f"✅ ዳታ ከ MongoDB ተጭኗል! ({len(data['users'])} ተጠቃሚዎች)")
+            return True
+        print("⚠️ MongoDB: ምንም የቆየ ዳታ አልተገኘም!")
     except Exception as e:
-        print(f"❌ ሪስቶር ስህተት: {e}")
+        print(f"❌ MongoDB መጫን ስህተት: {e}")
     return False
 
+# --- የድሮው get_user እና ማርካፖች ---
 def get_user(uid, name="ደንበኛ"):
     uid = str(uid)
     if uid not in data["users"]:
         data["users"][uid] = {"name": name, "wallet": 0}
+        save_data()
     return data["users"][uid]
 
 def main_menu_markup(uid):
@@ -172,34 +156,24 @@ def toggle_shift(message):
         data["current_shift"] = "assistant" if data["current_shift"] == "me" else "me"
         save_data()
         bot.reply_to(message, f"🔄 ፈረቃ ተቀይሯል! አሁን ተረኛው፦ {data['current_shift']}")
-    else:
-        bot.reply_to(message, "❌ የባለቤትነት መብት የለዎትም።")
 
-# --- አውቶማቲክ ብሮድካስት (Broadcast System) ---
 @bot.message_handler(commands=['post'])
 def start_broadcast(message):
     if message.from_user.id in ADMIN_IDS:
-        msg = bot.send_message(message.chat.id, "📢 ለመላክ የሚፈልጉትን መልዕክት (ጽሁፍ ወይም ፎቶ) አሁን ይላኩ፦")
+        msg = bot.send_message(message.chat.id, "📢 ለመላክ የሚፈልጉትን መልዕክት አሁን ይላኩ፦")
         bot.register_next_step_handler(msg, send_to_all)
-    else:
-        bot.reply_to(message, "❌ ይህ ለባለቤቱ ብቻ የተፈቀደ ነው!")
 
 def send_to_all(message):
     users = list(data["users"].keys())
     count = 0
-    fail = 0
-    bot.send_message(message.chat.id, f"⏳ ለ {len(users)} ተጠቃሚዎች በመላክ ላይ ነው...")
     for uid in users:
         try:
-            if message.content_type == 'text':
-                bot.send_message(uid, message.text)
-            elif message.content_type == 'photo':
-                bot.send_photo(uid, message.photo[-1].file_id, caption=message.caption)
+            if message.content_type == 'text': bot.send_message(uid, message.text)
+            elif message.content_type == 'photo': bot.send_photo(uid, message.photo[-1].file_id, caption=message.caption)
             count += 1
             time.sleep(0.05)
-        except:
-            fail += 1
-    bot.send_message(message.chat.id, f"✅ ተጠናቋል!\n📤 የተላከላቸው፦ {count}\n🚫 ያልደረሳቸው፦ {fail}")
+        except: pass
+    bot.send_message(message.chat.id, f"✅ ለ {count} ሰዎች ተልኳል!")
 
 @bot.message_handler(func=lambda m: m.text == "🎮 ሰሌዳ ምረጥ")
 def show_boards(message):
@@ -257,11 +231,11 @@ def handle_receipts(message):
 def callback_listener(call):
     is_admin = call.from_user.id in ADMIN_IDS
     if call.data.startswith('approve_') and is_admin:
-        target = call.data.split('_')[1]
+        target = call.data.split('_')
         m = bot.send_message(call.from_user.id, f"💵 ለ ID {target} የሚጨመረውን ብር ይጻፉ፦")
         bot.register_next_step_handler(m, finalize_app, target)
     elif call.data.startswith('decline_') and is_admin:
-        target = call.data.split('_')[1]
+        target = call.data.split('_')
         m = bot.send_message(call.from_user.id, "❌ ውድቅ የተደረገበትን ምክንያት ይጻፉ፦")
         bot.register_next_step_handler(m, finalize_dec, target)
     elif call.data.startswith('select_'): handle_selection(call)
@@ -274,7 +248,7 @@ def callback_listener(call):
     elif call.data == "admin_manage" and is_admin: manage_menu(call)
     elif call.data.startswith('edit_') and is_admin: edit_board(call)
     elif call.data.startswith('toggle_') and is_admin:
-        bid = call.data.split('_')[1]
+        bid = call.data.split('_')
         data["boards"][bid]["active"] = not data["boards"][bid]["active"]
         save_data(); edit_board(call)
     elif call.data.startswith('set_') and is_admin:
@@ -283,7 +257,7 @@ def callback_listener(call):
         bot.register_next_step_handler(m, update_board_value, bid, action)
     elif call.data == "admin_reset" and is_admin: reset_menu(call)
     elif call.data.startswith('doreset_') and is_admin:
-        bid = call.data.split('_')[1]
+        bid = call.data.split('_')
         data["boards"][bid]["slots"] = {}; data["pinned_msgs"][bid] = None
         save_data(); bot.answer_callback_query(call.id, "ሰሌዳው ጸድቷል!"); update_group_board(bid)
 
@@ -291,16 +265,16 @@ def finalize_app(message, target):
     try:
         amt = int(message.text)
         data["users"][str(target)]["wallet"] += amt
-        save_data()
+        save_data() # ዳታቤዝ ላይ ሴቭ
         bot.send_message(target, f"✅ <b>{amt} ብር ተጨምሯል!</b>")
         m = bot.send_message(target, "አሁን በሰሌዳ ላይ የሚወጣውን ስምዎን (እስከ 5 ፊደል) ይጻፉ፦")
         bot.register_next_step_handler(m, save_name, target)
-    except: bot.send_message(message.chat.id, "⚠️ ስህተት! ቁጥር ብቻ ይጻፉ።")
+    except: bot.send_message(message.chat.id, "⚠️ ቁጥር ብቻ ይጻፉ።")
 
 def save_name(message, uid):
     data["users"][str(uid)]["name"] = message.text[:5]
     save_data()
-    bot.send_message(uid, f"✅ ስምዎ '{message.text[:5]}' ተብሎ ተመዝግቧል!", reply_markup=main_menu_markup(uid))
+    bot.send_message(uid, f"✅ ስምዎ ተመዝግቧል!", reply_markup=main_menu_markup(uid))
     show_boards(message)
 
 def process_lookup(message):
@@ -309,42 +283,38 @@ def process_lookup(message):
         winner_name = data["boards"][bid]["slots"].get(num)
         if winner_name:
             winner_id = next((u for u, i in data["users"].items() if i["name"] == winner_name), None)
-            res = f"🏆 <b>አሸናፊ ተገኝቷል!</b>\n\n👤 ስም፦ {winner_name}\n🎰 ሰሌዳ፦ {bid} | ቁጥር፦ {num}\n"
-            if winner_id: res += f"🔗 <b>ሊንክ፦</b> <a href='tg://user?id={winner_id}'>ወደ አካውንቱ ሂድ</a>"
+            res = f"🏆 <b>አሸናፊ!</b>\n\n👤 ስም፦ {winner_name}\n🎰 ሰሌዳ፦ {bid} | ቁጥር፦ {num}\n"
+            if winner_id: res += f"🔗 <a href='tg://user?id={winner_id}'>ወደ አካውንቱ ሂድ</a>"
             bot.send_message(message.chat.id, res)
-        else: bot.send_message(message.chat.id, "⚠️ ይህ ቁጥር አልተያዘም!")
-    except: bot.send_message(message.chat.id, "⚠️ ስህተት! (ለምሳሌ: 1-5)")
+        else: bot.send_message(message.chat.id, "⚠️ አልተያዘም!")
+    except: bot.send_message(message.chat.id, "⚠️ ስህተት!")
 
 def handle_selection(call):
-    bid = call.data.split('_')[1]; user = get_user(call.message.chat.id)
+    bid = call.data.split('_'); user = get_user(call.message.chat.id)
     board = data["boards"][bid]
     if user["wallet"] < board["price"]:
         bot.answer_callback_query(call.id, "⚠️ በቂ ሂሳብ የሎትም!", show_alert=True); return
     markup = types.InlineKeyboardMarkup(row_width=5)
     btns = [types.InlineKeyboardButton(str(i), callback_data=f"pick_{bid}_{i}") for i in range(1, board["max"] + 1) if str(i) not in board["slots"]]
     markup.add(*btns)
-    bot.edit_message_text(f"🎰 <b>ሰሌዳ {bid}</b>\n💰 ቀሪ ሂሳብ፦ {user['wallet']} ብር\n\nቁጥር ይምረጡ፦", call.message.chat.id, call.message.message_id, reply_markup=markup)
+    bot.edit_message_text(f"🎰 <b>ሰሌዳ {bid}</b>\n💰 ቀሪ፦ {user['wallet']} ብር\n\nቁጥር ይምረጡ፦", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
 def finalize_reg_inline(call, bid, num):
     uid = str(call.message.chat.id); user = get_user(uid); board = data["boards"][bid]
-    if user["wallet"] < board["price"]: bot.answer_callback_query(call.id, "⚠️ በቂ ሂሳብ የሎትም!"); return
+    if user["wallet"] < board["price"]: return
     data["users"][uid]["wallet"] -= board["price"]
     board["slots"][num] = user["name"]
-    save_data(); update_group_board(bid); bot.answer_callback_query(call.id, f"✅ ቁጥር {num} ተመርጧል!")
+    save_data() # ዳታቤዝ ሴቭ
+    update_group_board(bid)
+    bot.answer_callback_query(call.id, f"✅ ቁጥር {num} ተመርጧል!")
     
-    # --- አውቶማቲክ ማሳሰቢያ ---
     remaining = board["max"] - len(board["slots"])
-    milestones = [35, 20, 10, 5, 2]
-    if remaining in milestones:
-        msg = (f"🎰 <b>ሰሌዳ {bid} ሊሞላ ነው!</b>\n"
-               f"━━━━━━━━━━━━━━━━━━━━━\n"
-               f"🔥 ዕጣ ለመውጣት <b>{remaining}</b> ሰዎች ብቻ ቀረን!\n"
-               f"🏃‍♂️ አሁኑኑ እድሎን ይሞክሩ!")
-        try: bot.send_message(GROUP_ID, msg)
+    if remaining in:
+        try: bot.send_message(GROUP_ID, f"🎰 <b>ሰሌዳ {bid} ሊሞላ {remaining} ሰው ብቻ ቀረ!</b>")
         except: pass
 
     if user["wallet"] >= board["price"]: handle_selection(call)
-    else: bot.edit_message_text(f"✅ ምዝገባ ተጠናቋል።\n💰 ቀሪ ሂሳብ፦ {user['wallet']} ብር", uid, call.message.message_id, reply_markup=main_menu_markup(uid))
+    else: bot.edit_message_text(f"✅ ተጠናቋል።\n💰 ቀሪ፦ {user['wallet']} ብር", uid, call.message.message_id, reply_markup=main_menu_markup(uid))
 
 def manage_menu(call):
     markup = types.InlineKeyboardMarkup()
@@ -352,7 +322,7 @@ def manage_menu(call):
     bot.edit_message_text("ሰሌዳ ይምረጡ፦", call.from_user.id, call.message.message_id, reply_markup=markup)
 
 def edit_board(call):
-    bid = call.data.split('_')[1]; b = data["boards"][bid]
+    bid = call.data.split('_'); b = data["boards"][bid]
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton(f"{'🟢 ክፍት' if b['active'] else '🔴 ዝግ'}", callback_data=f"toggle_{bid}"))
     markup.add(types.InlineKeyboardButton("🎫 ዋጋ", callback_data=f"set_price_{bid}"), types.InlineKeyboardButton("🎁 ሽልማት", callback_data=f"set_prize_{bid}"))
@@ -370,34 +340,29 @@ def update_board_value(message, bid, action):
     try:
         if action == "price": data["boards"][bid]["price"] = int(message.text)
         else: data["boards"][bid]["prize"] = message.text
-        save_data(); bot.send_message(message.chat.id, "✅ ተቀይሯል!"); update_group_board(bid)
+        save_data(); update_group_board(bid)
+        bot.send_message(message.chat.id, "✅ ተቀይሯል!")
     except: bot.send_message(message.chat.id, "⚠️ ስህተት!")
 
-import threading
-
-# በየ 5 ደቂቃው ራሱን ፒንግ የሚያደርግ ፋንክሽን (ሰርቨሩ እንዳይተኛ)
 def ping_self():
     while True:
         try:
-            # ሰርቨሩ የራሱን ዩአርኤል (URL) በመጥራት ነቅቶ እንዲቆይ ያደርጋል
             requests.get("https://fasil-bingo.onrender.com") 
-            print("📡 Ping Sent: Server is Awake!")
-        except:
-            pass
-        time.sleep(300) # 5 ደቂቃ (300 ሰከንድ)
+            print("📡 Ping Sent: Server Awake")
+        except: pass
+        time.sleep(300)
 
+# --- ዋና ማስነሻ ---
 if __name__ == "__main__":
-    # 1. መጀመሪያ ዳታውን ከቻናል ፈልጎ መጫን
-    universal_restore() 
+    # 1. መጀመሪያ ዳታውን ከ MongoDB መጫን
+    load_data()
     
-    # 2. Flask ሰርቨሩን በባክግራውንድ ማስነሳት
+    # 2. ሰርቨር እና ፒንግ ማስነሳት
     threading.Thread(target=keep_alive).start()
-    
-    # 3. ፒንግ የሚያደርገውን ሲስተም በባክግራውንድ ማስነሳት
     threading.Thread(target=ping_self).start()
     
-    # 4. ቦቱን ማስነሳት
-    print("🚀 ቦቱ በይፋ ስራ ጀምሯል...")
+    # 3. ቦቱን ማስነሳት
+    print("🚀 ቦቱ በ MongoDB በይፋ ስራ ጀምሯል...")
     bot.remove_webhook()
     while True:
         try:
@@ -405,6 +370,3 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"❌ Bot Polling Error: {e}")
             time.sleep(5)
-
-
-
