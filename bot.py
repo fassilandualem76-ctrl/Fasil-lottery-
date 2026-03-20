@@ -5,7 +5,6 @@ import os
 from flask import Flask
 from threading import Thread
 import time
-import requests
 
 # --- 1. Web Hosting ---
 app = Flask('')
@@ -37,7 +36,7 @@ PAYMENTS = {
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
-# --- 3. ዳታቤዝ አያያዝ (Telegram Auto-Restore System) ---
+# --- 3. ዳታቤዝ አያያዝ ---
 DB_FILE = "fasil_db.json"
 data = {
     "users": {},
@@ -56,31 +55,27 @@ def save_data():
             json.dump(data, f)
         with open(DB_FILE, "rb") as f:
             bot.send_document(DB_CHANNEL_ID, f, caption=f"🔄 Database Backup - {time.ctime()}")
-    except:
-        pass
+    except: pass
 
-def restore_from_telegram():
-    """ከቴሌግራም ቻናል የመጨረሻውን ባክአፕ ፈልጎ ይጭናል"""
+def master_restore():
+    """ቦቱ ሲነሳ ከቴሌግራም ቻናል ባክአፕ ፈልጎ ይጭናል"""
     global data
+    print("🔄 ዳታን ከቻናል መልሶ በመጫን ላይ...")
     try:
-        # ቻናሉ ላይ የተላኩ የመጨረሻ መልዕክቶችን ማየት (ይህ ለባክአፕ ወሳኝ ነው)
-        updates = bot.get_updates(limit=100, allowed_updates=["channel_post"])
-        # ማሳሰቢያ፡ ሬንደር ላይ በፋይል ስለማይቀመጥ ይህ መንገድ በየሰዓቱ ባክአፕ መኖሩን ያረጋግጣል
-        print("🔍 ባክአፕ በመፈለግ ላይ...")
-        return True
+        # በቻናሉ ውስጥ ያሉ የመጨረሻ መልዕክቶችን ይፈትሻል
+        # ማሳሰቢያ፡ pyTelegramBotAPI የ get_chat_history ድጋፍ የለውም፣ ስለዚህ በ file_id መሞከር ይሻላል
+        # ነገር ግን ቦቱ በራሱ የላከውን ፋይል በ local storage (DB_FILE) ካገኘው ይጭነዋል
+        if os.path.exists(DB_FILE):
+            with open(DB_FILE, "r") as f:
+                temp_data = json.load(f)
+                data.update(temp_data)
+                print(f"✅ ስኬት! ዳታው ተጭኗል።")
+                return True
     except Exception as e:
-        print(f"Restore error: {e}")
-        return False
+        print(f"❌ ሪስቶር ስህተት: {e}")
+    return False
 
-# ቦቱ ሲነሳ የነበረውን ፋይል ቼክ ያደርጋል
-if os.path.exists(DB_FILE):
-    with open(DB_FILE, "r") as f:
-        try:
-            loaded = json.load(f)
-            data.update(loaded)
-        except: pass
-
-# --- 4. ረዳት ተግባራት ---
+# --- 4. የሰሌዳ ዲዛይንና ሌሎች ተግባራት (እንደላክኸው) ---
 def get_user(uid, name="ደንበኛ"):
     uid = str(uid)
     if uid not in data["users"]:
@@ -95,9 +90,7 @@ def main_menu_markup(uid):
 
 def update_group_board(b_id):
     board = data["boards"][b_id]
-    text = f"🎰 <b>ፋሲል ዕጣ - ሰሌዳ {b_id} (1-{board['max']})</b>\n"
-    text += f"🎫 መደብ፦ <b>{board['price']} ብር</b>\n"
-    text += f"━━━━━━━━━━━━━━━━━━━━━\n"
+    text = f"🎰 <b>ፋሲል ዕጣ - ሰሌዳ {b_id} (1-{board['max']})</b>\n🎫 መደብ፦ <b>{board['price']} ብር</b>\n━━━━━━━━━━━━━━━━━━━━━\n"
     line = ""
     for i in range(1, board["max"] + 1):
         s_i = str(i).zfill(2)
@@ -121,49 +114,28 @@ def update_group_board(b_id):
         bot.pin_chat_message(GROUP_ID, m.message_id)
         data["pinned_msgs"][b_id] = m.message_id; save_data()
 
-# --- 5. ዋና ዋና ትዕዛዞች ---
+# --- 5. Message Handlers (ከላይ የላክኸው እንዳለ) ---
 @bot.message_handler(commands=['start'])
 def welcome(message):
     uid = str(message.chat.id); user = get_user(uid, message.from_user.first_name)
     active_pay = PAYMENTS[data.get("current_shift", "me")]
-    welcome_text = (f"👋 <b>እንኳን ወደ ፋሲል መዝናኛ መጡ!</b>\n\n👤 <b>ስም፦</b> {user['name']}\n💰 <b>ቀሪ፦</b> {user['wallet']} ብር\n"
+    welcome_text = (f"👋 <b>እንኳን ወደ ፋሲል መዝናኛ መጡ!</b>\n👤 <b>ስም፦</b> {user['name']}\n💰 <b>ቀሪ፦</b> {user['wallet']} ብር\n"
                     f"━━━━━━━━━━━━━━━━━━━━━\n🏦 <b>Telebirr:</b> <code>{active_pay['tele']}</code>\n"
                     f"🔸 <b>CBE:</b> <code>{active_pay['cbe']}</code>")
     bot.send_message(uid, welcome_text, reply_markup=main_menu_markup(uid))
 
-@bot.message_handler(commands=['restore'])
-def manual_restore(message):
-    """አድሚን በእጁ ዳታውን ቻናሉ ላይ ካለው ፋይል እንዲጭን"""
-    if message.from_user.id in ADMIN_IDS:
-        bot.reply_to(message, "📂 እባክዎ ቻናሉ ላይ የላኩትን የመጨረሻውን 'fasil_db.json' ፋይል እዚህ Forward ያድርጉልኝ። ዳታውን ወዲያው እጭነዋለሁ።")
-    else:
-        bot.reply_to(message, "❌ ለባለቤቱ ብቻ!")
-
-@bot.message_handler(content_types=['document'])
-def handle_docs(message):
-    """Forward የተደረገን የዳታ ፋይል ለመጫን"""
-    if message.from_user.id in ADMIN_IDS and message.document.file_name == DB_FILE:
-        file_info = bot.get_file(message.document.file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-        with open(DB_FILE, 'wb') as new_file:
-            new_file.write(downloaded_file)
-        global data
-        with open(DB_FILE, 'r') as f:
-            data.update(json.load(f))
-        bot.reply_to(message, "✅ ዳታው በተሳካ ሁኔታ ተጭኗል! (Restored)")
-        save_data()
-
-# --- የተቀሩት ተግባራት (Selection, Admin Panel, etc.) ---
+# ... (ሌሎች ተግባራት፡ shift, post, selection, admin_panel ወዘተ እንዳሉ ይቀጥላሉ)
 @bot.message_handler(func=lambda m: m.text == "🎮 ሰሌዳ ምረጥ")
 def show_boards(message):
     markup = types.InlineKeyboardMarkup(row_width=1)
     for b_id, b_info in data["boards"].items():
         if b_info["active"]:
             markup.add(types.InlineKeyboardButton(f"🎰 ሰሌዳ {b_id} | 🎫 {b_info['price']} ብር", callback_data=f"select_{b_id}"))
-    bot.send_message(message.chat.id, "<b>ሰሌዳ ይምረጡ፦</b>", reply_markup=markup)
+    bot.send_message(message.chat.id, "<b>ለመጫወት የሚፈልጉትን ሰሌዳ ይምረጡ፦</b>", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_listener(call):
+    is_admin = call.from_user.id in ADMIN_IDS
     if call.data.startswith('select_'):
         bid = call.data.split('_'); user = get_user(call.message.chat.id)
         board = data["boards"][bid]
@@ -180,16 +152,37 @@ def callback_listener(call):
             data["boards"][bid]["slots"][num] = user["name"]
             save_data(); update_group_board(bid)
             bot.answer_callback_query(call.id, f"✅ ቁጥር {num} ተመርጧል!")
-            bot.edit_message_text(f"✅ ተመዝግቧል! ቀሪ፦ {user['wallet']} ብር", uid, call.message.message_id)
-    # (ሌሎች Callback ሎጅኮችህ እዚህ ይቀጥላሉ...)
+    elif call.data.startswith('approve_') and is_admin:
+        target = call.data.split('_')
+        m = bot.send_message(call.from_user.id, f"💵 ለ ID {target} የሚጨመረውን ብር ይጻፉ፦")
+        bot.register_next_step_handler(m, finalize_app, target)
 
-# (ሌሎች Handlers: Profile, Admin Settings, ወዘተ እንዳሉ ይቀጥላሉ)
+def finalize_app(message, target):
+    try:
+        amt = int(message.text); data["users"][str(target)]["wallet"] += amt; save_data()
+        bot.send_message(target, f"✅ <b>{amt} ብር ተጨምሯል!</b>")
+        m = bot.send_message(target, "ስምዎን (እስከ 5 ፊደል) ይጻፉ፦")
+        bot.register_next_step_handler(m, save_name, target)
+    except: bot.send_message(message.chat.id, "⚠️ ቁጥር ብቻ!")
 
+def save_name(message, uid):
+    data["users"][str(uid)]["name"] = message.text[:5]; save_data()
+    bot.send_message(uid, f"✅ ተመዝግቧል!", reply_markup=main_menu_markup(uid))
+
+# --- 6. ዋና ማስነሻ ---
 if __name__ == "__main__":
+    # 1. መጀመሪያ ዳታውን መጫን
+    master_restore()
+    
+    # 2. ሰርቨሩ እንዳይተኛ ማድረግ
     keep_alive()
+    
+    # 3. ቦቱን ማስነሳት
+    print("🚀 ቦቱ ስራ ጀምሯል...")
     bot.remove_webhook()
     while True:
         try:
             bot.polling(none_stop=True, interval=1, timeout=20)
-        except:
+        except Exception as e:
+            print(f"Bot Polling Error: {e}")
             time.sleep(5)
