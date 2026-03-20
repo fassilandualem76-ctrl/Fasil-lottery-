@@ -54,36 +54,30 @@ def save_data():
         with open(DB_FILE, "w") as f:
             json.dump(data, f)
         with open(DB_FILE, "rb") as f:
-            bot.send_document(DB_CHANNEL_ID, f, caption=f"🔄 Database Backup - {time.ctime()}")
-    except: pass
+            status = f"🔄 Backup - {len(data.get('users', {}))} Users | {time.ctime()}"
+            bot.send_document(DB_CHANNEL_ID, f, caption=status)
+    except Exception as e:
+        print(f"❌ ሴቭ ስህተት: {e}")
 
-def load_data_from_channel():
+def master_restore():
     global data
+    print("🔄 ዳታን ከቻናል መልሶ በመጫን ላይ...")
     try:
-        # በቻናሉ ውስጥ የተላኩ የመጨረሻ 10 መልዕክቶችን ይፈትሻል
-        messages = bot.get_chat_history(DB_CHANNEL_ID, limit=10)
-        
-        # [አዲስ መከላከያ] ቻናሉ ላይ መልዕክት ከሌለ ቆይቶ እንዲሞክር
-        if not messages:
-            print("⚠️ ቻናሉ ላይ ምንም ባክአፕ አልተገኘም!")
-            return False
-
+        messages = bot.get_chat_history(DB_CHANNEL_ID, limit=20)
         for m in messages:
             if m.document and m.document.file_name == DB_FILE:
                 file_info = bot.get_file(m.document.file_id)
                 downloaded_file = bot.download_file(file_info.file_path)
-                with open(DB_FILE, 'wb') as new_file:
-                    new_file.write(downloaded_file)
-                
+                with open(DB_FILE, 'wb') as f:
+                    f.write(downloaded_file)
                 with open(DB_FILE, "r") as f:
-                    loaded = json.load(f)
-                    # ዋናው ጥንቃቄ እዚህ ጋር ነው
-                    if loaded.get("users") or loaded.get("boards"):
-                        data.update(loaded)
-                        print("✅ ዳታው በትክክል ተጭኗል!")
+                    temp_data = json.load(f)
+                    if temp_data.get("users"):
+                        data.update(temp_data)
+                        print(f"✅ ስኬት! {len(data['users'])} ተጠቃሚዎች ተጭነዋል።")
                         return True
     except Exception as e:
-        print(f"⚠️ ስህተት: {e}")
+        print(f"❌ ሪስቶር ስህተት: {e}")
     return False
 
 
@@ -361,13 +355,14 @@ def update_board_value(message, bid, action):
     except: bot.send_message(message.chat.id, "⚠️ ስህተት!")
 
 if __name__ == "__main__":
-    # 1. መጀመሪያ ከቻናል ዳታ መጫን
-    load_data_from_channel() 
+    # 1. መጀመሪያ ዳታውን መጫን
+    master_restore()
     
-    # 2. የዌብ ሰርቨሩን ማስነሳት
+    # 2. ሰርቨሩ እንዳይተኛ ማድረግ
     keep_alive()
     
     # 3. ቦቱን ማስነሳት
+    print("🚀 ቦቱ ስራ ጀምሯል...")
     bot.remove_webhook()
     while True:
         try:
@@ -375,5 +370,6 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Bot Polling Error: {e}")
             time.sleep(5)
+
 
 
