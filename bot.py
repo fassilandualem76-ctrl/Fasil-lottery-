@@ -62,6 +62,12 @@ def load_data_from_channel():
     try:
         # በቻናሉ ውስጥ የተላኩ የመጨረሻ 10 መልዕክቶችን ይፈትሻል
         messages = bot.get_chat_history(DB_CHANNEL_ID, limit=10)
+        
+        # [አዲስ መከላከያ] ቻናሉ ላይ መልዕክት ከሌለ ቆይቶ እንዲሞክር
+        if not messages:
+            print("⚠️ ቻናሉ ላይ ምንም ባክአፕ አልተገኘም!")
+            return False
+
         for m in messages:
             if m.document and m.document.file_name == DB_FILE:
                 file_info = bot.get_file(m.document.file_id)
@@ -71,12 +77,15 @@ def load_data_from_channel():
                 
                 with open(DB_FILE, "r") as f:
                     loaded = json.load(f)
-                    data.update(loaded)
-                print("✅ የቆየ ዳታ ከቻናል ላይ ተገኝቶ ተጭኗል!")
-                return True
+                    # ዋናው ጥንቃቄ እዚህ ጋር ነው
+                    if loaded.get("users") or loaded.get("boards"):
+                        data.update(loaded)
+                        print("✅ ዳታው በትክክል ተጭኗል!")
+                        return True
     except Exception as e:
-        print(f"⚠️ ዳታ ከቻናል ለመጫን አልተቻለም: {e}")
+        print(f"⚠️ ስህተት: {e}")
     return False
+
 
 def get_user(uid, name="ደንበኛ"):
     uid = str(uid)
