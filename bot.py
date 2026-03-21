@@ -5,12 +5,12 @@ import os
 from flask import Flask
 from threading import Thread
 import time
-from upstash_redis import Redis  # አዲሱ ላይብረሪ
+from upstash_redis import Redis # Redis ብቻ ተጨምሯል
 
 # --- 1. Web Hosting ---
 app = Flask('')
 @app.route('/')
-def home(): return "Fasil Lotto System is Active with Redis!"
+def home(): return "Fasil Lotto System is Active!"
 
 def run():
     port = int(os.environ.get("PORT", 8080))
@@ -21,18 +21,16 @@ def keep_alive():
     t.daemon = True
     t.start()
 
-# --- 2. ቦት እና Redis መረጃዎች ---
-TOKEN = "8721334129:AAEbMUHHLcVTv9pGzTwMwC_Wi4tLx3R_F5k"
+# --- 2. ቦት መረጃዎች ---
+TOKEN = "8721334129:AAHuEJDpuZf5vZ0GzKGPfRALlG3cA1TUmF0"
 MY_ID = 8488592165          
 ASSISTANT_ID = 7072611117   
 GROUP_ID = -1003881429974
 DB_CHANNEL_ID = -1003747262103
 
-# የ Redis መረጃዎች
+# Redis Connection Information
 REDIS_URL = "https://sunny-ferret-79578.upstash.io"
 REDIS_TOKEN = "gQAAAAAAATbaAAIncDE4MTQ2MThjMjVjYjI0YzU5OGQ0MjMzZGI0MGIwZTkwNXAxNzk1Nzg"
-
-# Redis Client ማዘጋጀት
 redis = Redis(url=REDIS_URL, token=REDIS_TOKEN)
 
 ADMIN_IDS = [MY_ID, ASSISTANT_ID]
@@ -44,9 +42,9 @@ PAYMENTS = {
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
-# --- 3. ዳታቤዝ አያያዝ (ከ Redis ጋር) ---
-# Default ዳታ (Redis ባዶ ከሆነ የሚጠቀምበት)
-default_data = {
+# --- 3. ዳታቤዝ አያያዝ ---
+DB_FILE = "fasil_db.json"
+data = {
     "users": {},
     "current_shift": "me",
     "boards": {
@@ -57,44 +55,39 @@ default_data = {
     "pinned_msgs": {"1": None, "2": None, "3": None}
 }
 
-data = default_data
-
 def save_data():
-    """ዳታውን ወደ Redis እና ወደ ባክአፕ ቻናል ይልካል።"""
     try:
-        # ወደ Redis ሴቭ ማድረግ
-        redis.set("fasil_lotto_data", json.dumps(data))
+        # Save to Redis
+        redis.set("fasil_lotto_db", json.dumps(data))
         
-        # ለጥንቃቄ ወደ ቴሌግራም ቻናል ባክአፕ መላክ
-        with open("backup.json", "w") as f:
+        # Local & Telegram Backup
+        with open(DB_FILE, "w") as f:
             json.dump(data, f)
-        with open("backup.json", "rb") as f:
-            bot.send_document(DB_CHANNEL_ID, f, caption=f"🔄 Redis Sync & Backup - {time.ctime()}")
-    except Exception as e:
-        print(f"Save Error: {e}")
+        with open(DB_FILE, "rb") as f:
+            bot.send_document(DB_CHANNEL_ID, f, caption=f"🔄 Database Backup - {time.ctime()}")
+    except: pass
 
 def load_data():
-    """ቦቱ ሲነሳ መረጃውን ከ Redis ይጎትታል።"""
     global data
     try:
-        raw_data = redis.get("fasil_lotto_data")
-        if raw_data:
-            data = json.loads(raw_data)
-            print("✅ ዳታ ከ Redis በተሳካ ሁኔታ ተነስቷል!")
-        else:
-            print("⚠️ Redis ባዶ ነው፣ በዲፎልት ዳታ እየሰራሁ ነው...")
-            save_data()
-    except Exception as e:
-        print(f"Load Error: {e}")
+        # Try loading from Redis first
+        raw_redis_data = redis.get("fasil_lotto_db")
+        if raw_redis_data:
+            data = json.loads(raw_redis_data)
+        elif os.path.exists(DB_FILE):
+            with open(DB_FILE, "r") as f:
+                loaded = json.load(f)
+                data.update(loaded)
+    except: pass
 
-# ቦቱ እንደተነሳ ዳታውን ጫን
+# Load data on start
 load_data()
 
 def get_user(uid, name="ደንበኛ"):
     uid = str(uid)
     if uid not in data["users"]:
         data["users"][uid] = {"name": name, "wallet": 0}
-        save_data() # አዲስ ተጠቃሚ ሲመጣ ወዲያው ሴቭ አድርግ
+        save_data()
     return data["users"][uid]
 
 def main_menu_markup(uid):
@@ -196,7 +189,8 @@ def show_boards(message):
 
 @bot.message_handler(func=lambda m: m.text == "🎫 የያዝኳቸው ቁጥሮች")
 def my_numbers(message):
-    uid = str(message.chat.id); name = data["users"][uid]["name"]
+    uid = str(message.chat.id)
+    name = data["users"][uid]["name"]
     found = False; text = "🎫 <b>የያዟቸው ቁጥሮች፦</b>\n\n"
     for bid, binfo in data["boards"].items():
         user_nums = [n for n, u in binfo["slots"].items() if u == name]
@@ -284,6 +278,7 @@ def save_name(message, uid):
     data["users"][str(uid)]["name"] = message.text[:5]
     save_data()
     bot.send_message(uid, f"✅ ስምዎ '{message.text[:5]}' ተብሎ ተመዝግቧል!", reply_markup=main_menu_markup(uid))
+    show_boards(message)
 
 def process_lookup(message):
     try:
@@ -314,9 +309,14 @@ def finalize_reg_inline(call, bid, num):
     board["slots"][num] = user["name"]
     save_data(); update_group_board(bid); bot.answer_callback_query(call.id, f"✅ ቁጥር {num} ተመርጧል!")
     
+    # --- አውቶማቲክ ማሳሰቢያ ---
     remaining = board["max"] - len(board["slots"])
-    if remaining in:
-        msg = (f"🎰 <b>ሰሌዳ {bid} ሊሞላ ነው!</b>\n🔥 ዕጣ ለመውጣት <b>{remaining}</b> ሰዎች ብቻ ቀረን!")
+    milestones =
+    if remaining in milestones:
+        msg = (f"🎰 <b>ሰሌዳ {bid} ሊሞላ ነው!</b>\n"
+               f"━━━━━━━━━━━━━━━━━━━━━\n"
+               f"🔥 ዕጣ ለመውጣት <b>{remaining}</b> ሰዎች ብቻ ቀረን!\n"
+               f"🏃‍♂️ አሁኑኑ እድሎን ይሞክሩ!")
         try: bot.send_message(GROUP_ID, msg)
         except: pass
 
