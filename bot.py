@@ -5,7 +5,7 @@ import os
 from flask import Flask
 from threading import Thread
 import time
-from upstash_redis import Redis # Redis ብቻ ተጨምሯል
+from upstash_redis import Redis
 
 # --- 1. Web Hosting ---
 app = Flask('')
@@ -22,16 +22,11 @@ def keep_alive():
     t.start()
 
 # --- 2. ቦት መረጃዎች ---
-TOKEN = "8721334129:AAHuEJDpuZf5vZ0GzKGPfRALlG3cA1TUmF0"
+TOKEN = "8721334129:AAEbMUHHLcVTv9pGzTwMwC_Wi4tLx3R_F5k"
 MY_ID = 8488592165          
 ASSISTANT_ID = 7072611117   
 GROUP_ID = -1003881429974
 DB_CHANNEL_ID = -1003747262103
-
-# Redis Connection Information
-REDIS_URL = "https://sunny-ferret-79578.upstash.io"
-REDIS_TOKEN = "gQAAAAAAATbaAAIncDE4MTQ2MThjMjVjYjI0YzU5OGQ0MjMzZGI0MGIwZTkwNXAxNzk1Nzg"
-redis = Redis(url=REDIS_URL, token=REDIS_TOKEN)
 
 ADMIN_IDS = [MY_ID, ASSISTANT_ID]
 
@@ -41,6 +36,11 @@ PAYMENTS = {
 }
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
+
+# Redis Connection
+REDIS_URL = "https://sunny-ferret-79578.upstash.io"
+REDIS_TOKEN = "gQAAAAAAATbaAAIncDE4MTQ2MThjMjVjYjI0YzU5OGQ0MjMzZGI0MGIwZTkwNXAxNzk1Nzg"
+redis = Redis(url=REDIS_URL, token=REDIS_TOKEN)
 
 # --- 3. ዳታቤዝ አያያዝ ---
 DB_FILE = "fasil_db.json"
@@ -57,10 +57,10 @@ data = {
 
 def save_data():
     try:
-        # Save to Redis
+        # መረጃውን ወደ Redis መላክ
         redis.set("fasil_lotto_db", json.dumps(data))
         
-        # Local & Telegram Backup
+        # የድሮው የፋይል አቀማመጥ እንዳይበላሽ (Backups)
         with open(DB_FILE, "w") as f:
             json.dump(data, f)
         with open(DB_FILE, "rb") as f:
@@ -70,7 +70,7 @@ def save_data():
 def load_data():
     global data
     try:
-        # Try loading from Redis first
+        # መጀመሪያ ከ Redis ዳታ ለመሳብ መሞከር
         raw_redis_data = redis.get("fasil_lotto_db")
         if raw_redis_data:
             data = json.loads(raw_redis_data)
@@ -80,14 +80,13 @@ def load_data():
                 data.update(loaded)
     except: pass
 
-# Load data on start
+# ቦቱ ስራ ሲጀምር ዳታውን እንዲያነብ ጥሪ ማድረግ
 load_data()
 
 def get_user(uid, name="ደንበኛ"):
     uid = str(uid)
     if uid not in data["users"]:
         data["users"][uid] = {"name": name, "wallet": 0}
-        save_data()
     return data["users"][uid]
 
 def main_menu_markup(uid):
@@ -159,6 +158,7 @@ def toggle_shift(message):
     else:
         bot.reply_to(message, "❌ የባለቤትነት መብት የለዎትም።")
 
+# --- አውቶማቲክ ብሮድካስት (Broadcast System) ---
 @bot.message_handler(commands=['post'])
 def start_broadcast(message):
     if message.from_user.id in ADMIN_IDS:
@@ -169,14 +169,19 @@ def start_broadcast(message):
 
 def send_to_all(message):
     users = list(data["users"].keys())
-    count = 0; fail = 0
+    count = 0
+    fail = 0
     bot.send_message(message.chat.id, f"⏳ ለ {len(users)} ተጠቃሚዎች በመላክ ላይ ነው...")
     for uid in users:
         try:
-            if message.content_type == 'text': bot.send_message(uid, message.text)
-            elif message.content_type == 'photo': bot.send_photo(uid, message.photo[-1].file_id, caption=message.caption)
-            count += 1; time.sleep(0.05)
-        except: fail += 1
+            if message.content_type == 'text':
+                bot.send_message(uid, message.text)
+            elif message.content_type == 'photo':
+                bot.send_photo(uid, message.photo[-1].file_id, caption=message.caption)
+            count += 1
+            time.sleep(0.05)
+        except:
+            fail += 1
     bot.send_message(message.chat.id, f"✅ ተጠናቋል!\n📤 የተላከላቸው፦ {count}\n🚫 ያልደረሳቸው፦ {fail}")
 
 @bot.message_handler(func=lambda m: m.text == "🎮 ሰሌዳ ምረጥ")
@@ -191,7 +196,8 @@ def show_boards(message):
 def my_numbers(message):
     uid = str(message.chat.id)
     name = data["users"][uid]["name"]
-    found = False; text = "🎫 <b>የያዟቸው ቁጥሮች፦</b>\n\n"
+    found = False
+    text = "🎫 <b>የያዟቸው ቁጥሮች፦</b>\n\n"
     for bid, binfo in data["boards"].items():
         user_nums = [n for n, u in binfo["slots"].items() if u == name]
         if user_nums:
@@ -234,11 +240,11 @@ def handle_receipts(message):
 def callback_listener(call):
     is_admin = call.from_user.id in ADMIN_IDS
     if call.data.startswith('approve_') and is_admin:
-        target = call.data.split('_')
+        target = call.data.split('_')[1]
         m = bot.send_message(call.from_user.id, f"💵 ለ ID {target} የሚጨመረውን ብር ይጻፉ፦")
         bot.register_next_step_handler(m, finalize_app, target)
     elif call.data.startswith('decline_') and is_admin:
-        target = call.data.split('_')
+        target = call.data.split('_')[1]
         m = bot.send_message(call.from_user.id, "❌ ውድቅ የተደረገበትን ምክንያት ይጻፉ፦")
         bot.register_next_step_handler(m, finalize_dec, target)
     elif call.data.startswith('select_'): handle_selection(call)
@@ -251,7 +257,7 @@ def callback_listener(call):
     elif call.data == "admin_manage" and is_admin: manage_menu(call)
     elif call.data.startswith('edit_') and is_admin: edit_board(call)
     elif call.data.startswith('toggle_') and is_admin:
-        bid = call.data.split('_')
+        bid = call.data.split('_')[1]
         data["boards"][bid]["active"] = not data["boards"][bid]["active"]
         save_data(); edit_board(call)
     elif call.data.startswith('set_') and is_admin:
@@ -260,7 +266,7 @@ def callback_listener(call):
         bot.register_next_step_handler(m, update_board_value, bid, action)
     elif call.data == "admin_reset" and is_admin: reset_menu(call)
     elif call.data.startswith('doreset_') and is_admin:
-        bid = call.data.split('_')
+        bid = call.data.split('_')[1]
         data["boards"][bid]["slots"] = {}; data["pinned_msgs"][bid] = None
         save_data(); bot.answer_callback_query(call.id, "ሰሌዳው ጸድቷል!"); update_group_board(bid)
 
@@ -293,7 +299,7 @@ def process_lookup(message):
     except: bot.send_message(message.chat.id, "⚠️ ስህተት! (ለምሳሌ: 1-5)")
 
 def handle_selection(call):
-    bid = call.data.split('_'); user = get_user(call.message.chat.id)
+    bid = call.data.split('_')[1]; user = get_user(call.message.chat.id)
     board = data["boards"][bid]
     if user["wallet"] < board["price"]:
         bot.answer_callback_query(call.id, "⚠️ በቂ ሂሳብ የሎትም!", show_alert=True); return
@@ -311,7 +317,7 @@ def finalize_reg_inline(call, bid, num):
     
     # --- አውቶማቲክ ማሳሰቢያ ---
     remaining = board["max"] - len(board["slots"])
-    milestones =
+    milestones = [35, 20, 10, 5, 2]
     if remaining in milestones:
         msg = (f"🎰 <b>ሰሌዳ {bid} ሊሞላ ነው!</b>\n"
                f"━━━━━━━━━━━━━━━━━━━━━\n"
@@ -329,7 +335,7 @@ def manage_menu(call):
     bot.edit_message_text("ሰሌዳ ይምረጡ፦", call.from_user.id, call.message.message_id, reply_markup=markup)
 
 def edit_board(call):
-    bid = call.data.split('_'); b = data["boards"][bid]
+    bid = call.data.split('_')[1]; b = data["boards"][bid]
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton(f"{'🟢 ክፍት' if b['active'] else '🔴 ዝግ'}", callback_data=f"toggle_{bid}"))
     markup.add(types.InlineKeyboardButton("🎫 ዋጋ", callback_data=f"set_price_{bid}"), types.InlineKeyboardButton("🎁 ሽልማት", callback_data=f"set_prize_{bid}"))
