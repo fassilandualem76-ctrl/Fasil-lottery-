@@ -106,7 +106,7 @@ def update_group_board(b_id):
         s_i = str(i).zfill(2)
         if str(i) in board["slots"]:
             u_name = board["slots"][str(i)]
-            short = u_name[:7]
+            short = u_name[:5]
             line += f"<code>{s_i}</code>✅{short}\t\t\t\t"
         else:
             line += f"<code>{s_i}</code>⬜️\t\t\t\t\t\t"
@@ -276,14 +276,14 @@ def finalize_app(message, target):
         data["users"][str(target)]["wallet"] += amt
         save_data()
         bot.send_message(target, f"✅ <b>{amt} ብር ተጨምሯል!</b>")
-        m = bot.send_message(target, "አሁን በሰሌዳ ላይ የሚወጣውን ስምዎን (እስከ 7 ፊደል) ይጻፉ፦")
+        m = bot.send_message(target, "አሁን በሰሌዳ ላይ የሚወጣውን ስምዎን (እስከ 5 ፊደል) ይጻፉ፦")
         bot.register_next_step_handler(m, save_name, target)
     except: bot.send_message(message.chat.id, "⚠️ ስህተት! ቁጥር ብቻ ይጻፉ።")
 
 def save_name(message, uid):
-    data["users"][str(uid)]["name"] = message.text[:7]
+    data["users"][str(uid)]["name"] = message.text[:5]
     save_data()
-    bot.send_message(uid, f"✅ ስምዎ '{message.text[:7]}' ተብሎ ተመዝግቧል!", reply_markup=main_menu_markup(uid))
+    bot.send_message(uid, f"✅ ስምዎ '{message.text[:5]}' ተብሎ ተመዝግቧል!", reply_markup=main_menu_markup(uid))
     show_boards(message)
 
 def process_lookup(message):
