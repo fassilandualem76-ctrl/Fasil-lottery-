@@ -106,8 +106,8 @@ def update_group_board(b_id):
         s_i = str(i).zfill(2)
         if str(i) in board["slots"]:
             u_name = board["slots"][str(i)]
-            short = u_name[:5]
-            line += f"<code>{s_i}</code>🔴{short}\t\t\t\t"
+            short = u_name[:7]
+            line += f"<code>{s_i}</code>✅{short}\t\t\t\t"
         else:
             line += f"<code>{s_i}</code>⬜️\t\t\t\t\t\t"
         if i % 2 == 0:
