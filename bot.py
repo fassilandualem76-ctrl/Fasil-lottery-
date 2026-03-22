@@ -276,14 +276,14 @@ def finalize_app(message, target):
         data["users"][str(target)]["wallet"] += amt
         save_data()
         bot.send_message(target, f"✅ <b>{amt} ብር ተጨምሯል!</b>")
-        m = bot.send_message(target, "አሁን በሰሌዳ ላይ የሚወጣውን ስምዎን (እስከ 5 ፊደል) ይጻፉ፦")
+        m = bot.send_message(target, "አሁን በሰሌዳ ላይ የሚወጣውን ስምዎን (እስከ 7 ፊደል) ይጻፉ፦")
         bot.register_next_step_handler(m, save_name, target)
     except: bot.send_message(message.chat.id, "⚠️ ስህተት! ቁጥር ብቻ ይጻፉ።")
 
 def save_name(message, uid):
-    data["users"][str(uid)]["name"] = message.text[:5]
+    data["users"][str(uid)]["name"] = message.text[:7]
     save_data()
-    bot.send_message(uid, f"✅ ስምዎ '{message.text[:5]}' ተብሎ ተመዝግቧል!", reply_markup=main_menu_markup(uid))
+    bot.send_message(uid, f"✅ ስምዎ '{message.text[:7]}' ተብሎ ተመዝግቧል!", reply_markup=main_menu_markup(uid))
     show_boards(message)
 
 def process_lookup(message):
