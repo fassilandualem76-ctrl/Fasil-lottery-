@@ -357,7 +357,12 @@ def update_board_value(message, bid, action):
     except: bot.send_message(message.chat.id, "⚠️ ስህተት!")
 
 if __name__ == "__main__":
+    # ለጊዜው ይህንን ጨምር (አንድ ጊዜ Deploy ካደረግክ በኋላ መልሰህ ብታጠፋው ይሻላል)
+    data["pinned_msgs"] = {} 
+    save_data()
+    
     keep_alive()
+    # ... ሌላው የ bot.polling ኮድ ይቀጥላል
     bot.remove_webhook()
     while True:
         try: bot.polling(none_stop=True, interval=1, timeout=20)
