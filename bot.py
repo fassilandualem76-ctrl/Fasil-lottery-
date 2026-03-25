@@ -91,20 +91,9 @@ def get_user(uid, name="ደንበኛ"):
 
 def main_menu_markup(uid):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    # የመጀመሪያው ረድፍ
-    markup.add("🎮 ሰሌዳ ምርጥ", "👤 ፕሮፋይል")
-    # ሁለተኛው ረድፍ (አዲሱ የግብዣ ሊንክ እዚህ ገባ)
-    markup.add("🎫 የያዛችሁ ቁጥሮች", "🔗 የግብዣ ሊንክ")
-    
-    # አድሚን ከሆነ ብቻ የሚታይ በተን
-    if str(uid) in map(str, ADMIN_IDS):
-        markup.add("⚙️ Admin Settings")
-        
+    markup.add("🎮 ሰሌዳ ምረጥ", "👤 ፕሮፋይል", "🎫 የያዝኳቸው ቁጥሮች")
+    if int(uid) in ADMIN_IDS: markup.add("⚙️ Admin Settings")
     return markup
-
-def show_main_menu(uid):
-    markup = main_menu_markup(uid)
-    bot.send_message(uid, "ዋና ማውጫ፦", reply_markup=markup)
 
 # --- 4. የሰሌዳ ዲዛይን (Group View) ---
 def update_group_board(b_id):
@@ -146,38 +135,19 @@ def update_group_board(b_id):
 @bot.message_handler(commands=['start'])
 def welcome(message):
     uid = str(message.chat.id)
-    text_split = message.text.split()
-    
-    # --- 1. የሪፈራል (የግብዣ) ሲስተም ---
-    # ተጠቃሚው አዲስ ከሆነ እና በሊንክ ከመጣ
-    if len(text_split) > 1 and uid not in data["users"]:
-        referrer_id = text_split
-        # እራሱን እንዳይጋብዝ እና ጋባዡ በዳታቤዝ ውስጥ መኖሩን ያረጋግጣል
-        if referrer_id != uid and referrer_id in data["users"]:
-            data["users"][referrer_id]["wallet"] += 1 # ለጋባዡ 1 ብር መጨመር
-            save_data()
-            try:
-                bot.send_message(referrer_id, "🎉 እንኳን ደስ አልዎት! በግብዣዎ አዲስ ሰው ስለመጣ 1 ብር ዋሌትዎ ላይ ተጨምሯል።")
-            except:
-                pass
-
-    # --- 2. የተጠቃሚ መረጃ ማምጣት ---
     user = get_user(uid, message.from_user.first_name)
     active_pay = PAYMENTS[data.get("current_shift", "me")]
     
-    # --- 3. የእንኳን ደህና መጡ መልዕክት (ያንተ ኦሪጅናል ጽሁፍ) ---
     welcome_text = (
-        f"👋 <b>እንኳን ወደ ፋሲል መዝናኛ ዕድለኛ እጣ መጡ!</b>\n\n"
-        f"👤 <b>ስም:-</b> {user['name']}\n"
-        f"💰 <b>ቀሪ ሂሳብ:-</b> {user['wallet']} ብር\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"👋 <b>እንኳን ወደ ፋሲል መዝናኛና ዕድለኛ ዕጣ መጡ!</b>\n\n"
+        f"👤 <b>ስም፦</b> {user['name']}\n"
+        f"💰 <b>ቀሪ ሂሳብ፦</b> {user['wallet']} ብር\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"🏦 <b>Telebirr:</b> <code>{active_pay['tele']}</code>\n"
-        f"🔸 <b>CBE:</b> <code>{active_pay['cbe']}</code>\n"
-        f"⚠️ <b>ብር ሲያስገቡ የደረሰኝ ፎቶ እዚህ ይላኩ::</b>"
+        f"🔸 <b>CBE:</b> <code>{active_pay['cbe']}</code>\n\n"
+        f"⚠️ <b>ብር ሲያስገቡ የደረሰኙን ፎቶ ወይም መልዕክት እዚህ ይላኩ።</b>"
     )
-    
-    bot.send_message(uid, welcome_text, parse_mode="HTML")
-    show_main_menu(uid)
+    bot.send_message(uid, welcome_text, reply_markup=main_menu_markup(uid))
 
 @bot.message_handler(commands=['shift'])
 def toggle_shift(message):
@@ -393,17 +363,6 @@ if __name__ == "__main__":
     
     keep_alive()
     # ... ሌላው የ bot.polling ኮድ ይቀጥላል
-@bot.message_handler(func=lambda m: m.text == "🔗 የግብዣ ሊንክ")
-def send_link(message):
-    bot_username = bot.get_me().username
-    ref_link = f"https://t.me/{bot_username}?start={message.chat.id}"
-    msg = (
-        f"🎁 <b>የግብዣ ፕሮግራም</b>\n\n"
-        f"ይህንን ሊንክ ለጓደኞችዎ በመላክ ዋሌትዎ ላይ ብር ይሰብስቡ!\n\n"
-        f"🔗 <b>ሊንክ:-</b> <code>{ref_link}</code>\n\n"
-        f"እያንዳንዱ ሰው በሊንክዎ ሲመጣ <b>1 ብር</b> ያገኛሉ።"
-    )
-    bot.send_message(message.chat.id, msg, parse_mode="HTML")
     bot.remove_webhook()
     while True:
         try: bot.polling(none_stop=True, interval=1, timeout=20)
