@@ -91,9 +91,19 @@ def get_user(uid, name="ደንበኛ"):
 
 def main_menu_markup(uid):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add("🎮 ሰሌዳ ምረጥ", "👤 ፕሮፋይል", "🎫 የያዝኳቸው ቁጥሮች")
-    if int(uid) in ADMIN_IDS: markup.add("⚙️ Admin Settings")
+    # የመጀመሪያው ረድፍ
+    markup.add("🎮 ሰሌዳ ምረጥ", "👤 ፕሮፋይል")
+    # ሁለተኛው ረድፍ (የግብዣ ሊንክ እዚህ ተጨምሯል)
+    markup.add("🎫 የያዝኳቸው ቁጥሮች", "🔗 የግብዣ ሊንክ")
+    
+    if int(uid) in ADMIN_IDS: 
+        markup.add("⚙️ Admin Settings")
     return markup
+
+def show_main_menu(uid):
+    uid = str(uid)
+    markup = main_menu_markup(uid)
+    bot.send_message(uid, "<b>ዋና ማውጫ፦</b>", reply_markup=markup, parse_mode="HTML")
 
 # --- 4. የሰሌዳ ዲዛይን (Group View) ---
 def update_group_board(b_id):
