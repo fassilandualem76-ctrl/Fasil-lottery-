@@ -357,13 +357,19 @@ def update_board_value(message, bid, action):
     except: bot.send_message(message.chat.id, "⚠️ ስህተት!")
 
 if __name__ == "__main__":
-    # ለጊዜው ይህንን ጨምር (አንድ ጊዜ Deploy ካደረግክ በኋላ መልሰህ ብታጠፋው ይሻላል)
-    data["pinned_msgs"] = {} 
-    save_data()
-    
-    keep_alive()
-    # ... ሌላው የ bot.polling ኮድ ይቀጥላል
-    bot.remove_webhook()
-    while True:
-        try: bot.polling(none_stop=True, interval=1, timeout=20)
-        except: time.sleep(5)
+    try:
+        # 1. ዌብሳይቱን (Flask) በThread ያስጀምረዋል (Render እንዳያጠፋው)
+        keep_alive()
+        print("🚀 Fasil Bingo Bot is starting...")
+        
+        # 2. የቆዩ Webhooks ካሉ ያጸዳቸዋል (Conflict እንዳይፈጠር)
+        bot.remove_webhook()
+        time.sleep(1)
+        
+        # 3. ቦቱ እንዳይቆም (Infinity Polling) በደንብ እንዲሰራ ያደርጋል
+        # skip_pending=True ማለት ቦቱ በጠፋበት ሰዓት የተላኩ የቆዩ ሜሴጆችን ችላ እንዲል ያደርጋል (መደጋገምን ይከላከላል)
+        bot.infinity_polling(timeout=20, long_polling_timeout=10, skip_pending=True)
+        
+    except Exception as e:
+        print(f"❌ ስህተት ተከስቷል: {e}")
+        time.sleep(5)
