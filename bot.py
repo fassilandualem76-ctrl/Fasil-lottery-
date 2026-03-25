@@ -393,6 +393,17 @@ if __name__ == "__main__":
     
     keep_alive()
     # ... ሌላው የ bot.polling ኮድ ይቀጥላል
+@bot.message_handler(func=lambda m: m.text == "🔗 የግብዣ ሊንክ")
+def send_link(message):
+    bot_username = bot.get_me().username
+    ref_link = f"https://t.me/{bot_username}?start={message.chat.id}"
+    msg = (
+        f"🎁 <b>የግብዣ ፕሮግራም</b>\n\n"
+        f"ይህንን ሊንክ ለጓደኞችዎ በመላክ ዋሌትዎ ላይ ብር ይሰብስቡ!\n\n"
+        f"🔗 <b>ሊንክ:-</b> <code>{ref_link}</code>\n\n"
+        f"እያንዳንዱ ሰው በሊንክዎ ሲመጣ <b>1 ብር</b> ያገኛሉ።"
+    )
+    bot.send_message(message.chat.id, msg, parse_mode="HTML")
     bot.remove_webhook()
     while True:
         try: bot.polling(none_stop=True, interval=1, timeout=20)
