@@ -220,6 +220,46 @@ def admin_panel(message):
                types.InlineKeyboardButton("🔄 ሰሌዳ አጽዳ (Reset)", callback_data="admin_reset"))
     bot.send_message(message.chat.id, f"🛠 <b>የአድሚን ዳሽቦርድ</b>\n\n{stats}", reply_markup=markup)
 
+# --- ያልከፈሉትን ለመሰረዝ እና ማስጠንቀቂያ ለመስጠት ---
+
+@bot.message_handler(commands=['warn_unpaid'])
+def warn_unpaid(message):
+    if message.from_user.id not in ADMIN_IDS: return
+    count = 0
+    for bid, binfo in data["boards"].items():
+        for num, uname in binfo["slots"].items():
+            # የተጫዋቹን ID በስሙ መፈለግ
+            target_id = next((uid for uid, info in data["users"].items() if info["name"] == uname), None)
+            if target_id:
+                try:
+                    bot.send_message(target_id, f"⚠️ <b>ማስጠንቀቂያ!</b>\nበሰሌዳ {bid} የያዙት ቁጥር {num} ክፍያ ስላልተፈጸመበት ሊሰረዝ ነው። እባክዎ አሁኑኑ ክፍያ ይፈጸሙ።")
+                    count += 1
+                except: pass
+    bot.reply_to(message, f"📢 ለ {count} ሰዎች ማስጠንቀቂያ ተልኳል።")
+
+@bot.message_handler(commands=['remove_unpaid'])
+def remove_unpaid(message):
+    if message.from_user.id not in ADMIN_IDS: return
+    try:
+        # አጠቃቀም /remove_unpaid 1-15
+        args = message.text.split()
+        bid, num = args.split('-')
+        if bid in data["boards"] and num in data["boards"][bid]["slots"]:
+            uname = data["boards"][bid]["slots"].pop(num)
+            save_data()
+            update_group_board(bid) # ግሩፑ ላይ ያለውን ሰሌዳ ያዘምናል
+            bot.reply_to(message, f"✅ ተጫዋች {uname} ከሰሌዳ {bid} ቁጥር {num} ላይ ተሰርዟል።")
+            
+            # ለተጫዋቹ መልዕክት መላክ
+            target_id = next((uid for uid, info in data["users"].items() if info["name"] == uname), None)
+            if target_id:
+                try: bot.send_message(target_id, f"❌ <b>ማሳሰቢያ፦</b> ክፍያ ስላልፈጸሙ በሰሌዳ {bid} የነበረው ቁጥር {num} ተሰርዟል።")
+                except: pass
+        else:
+            bot.reply_to(message, "⚠️ የተሳሳተ ሰሌዳ ወይም ቁጥር!")
+    except:
+        bot.reply_to(message, "⚠️ አጠቃቀም፦ <code>/remove_unpaid 1-15</code>")
+
 @bot.message_handler(content_types=['photo', 'text'])
 def handle_receipts(message):
     if message.chat.type != 'private': return 
