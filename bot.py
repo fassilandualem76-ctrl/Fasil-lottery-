@@ -220,33 +220,6 @@ def admin_panel(message):
                types.InlineKeyboardButton("🔄 ሰሌዳ አጽዳ (Reset)", callback_data="admin_reset"))
     bot.send_message(message.chat.id, f"🛠 <b>የአድሚን ዳሽቦርድ</b>\n\n{stats}", reply_markup=markup)
 
-@bot.message_handler(commands=['remove_unpaid'])
-def remove_unpaid(message):
-    if message.from_user.id not in ADMIN_IDS: return
-    try:
-        parts = message.text.split()
-        if len(parts) < 2:
-            bot.reply_to(message, "⚠️ አጠቃቀም፦ <code>/remove_unpaid 1-15</code>")
-            return
-            
-        args = parts # <--- ይቺ ናት መስተካከል ያለባት
-        bid, num = args.split('-')
-        
-        if bid in data["boards"] and num in data["boards"][bid]["slots"]:
-            uname = data["boards"][bid]["slots"].pop(num)
-            save_data()
-            update_group_board(bid)
-            bot.reply_to(message, f"✅ ተጫዋች {uname} ከሰሌዳ {bid} ቁጥር {num} ላይ ተሰርዟል።")
-            
-            target_id = next((uid for uid, info in data["users"].items() if info["name"] == uname), None)
-            if target_id:
-                try: bot.send_message(target_id, f"❌ <b>ማሳሰቢያ፦</b> ክፍያ ስላልፈጸሙ በሰሌዳ {bid} የነበረው ቁጥር {num} ተሰርዟል።")
-                except: pass
-        else:
-            bot.reply_to(message, "⚠️ የተሳሳተ ሰሌዳ ወይም ቁጥር!")
-    except:
-        bot.reply_to(message, "⚠️ አጠቃቀም፦ <code>/remove_unpaid 1-15</code>")
-
 @bot.message_handler(content_types=['photo', 'text'])
 def handle_receipts(message):
     if message.chat.type != 'private': return 
