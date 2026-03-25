@@ -369,14 +369,35 @@ def update_board_value(message, bid, action):
         save_data(); bot.send_message(message.chat.id, "✅ ተቀይሯል!"); update_group_board(bid)
     except: bot.send_message(message.chat.id, "⚠️ ስህተት!")
 
+@bot.message_handler(func=lambda m: m.text == "🔗 የግብዣ ሊንክ")
+def send_link(message):
+    try:
+        bot_username = bot.get_me().username
+        ref_link = f"https://t.me/{bot_username}?start={message.chat.id}"
+        msg = (
+            f"🎁 <b>የግብዣ ፕሮግራም</b>\n\n"
+            f"ይህንን ሊንክ ለጓደኞችዎ በመላክ ዋሌትዎ ላይ ብር ይሰብስቡ!\n\n"
+            f"🔗 <b>ሊንክ:-</b> <code>{ref_link}</code>\n\n"
+            f"እያንዳንዱ ሰው በሊንክዎ ሲመጣ <b>1 ብር</b> ያገኛሉ።"
+        )
+        bot.send_message(message.chat.id, msg, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error: {e}")
+
 if __name__ == "__main__":
-    # ለጊዜው ይህንን ጨምር (አንድ ጊዜ Deploy ካደረግክ በኋላ መልሰህ ብታጠፋው ይሻላል)
-    data["pinned_msgs"] = {} 
-    save_data()
+    # ዳታቤዝ ዝግጅት
+    if "pinned_msgs" not in data:
+        data["pinned_msgs"] = {}
+        save_data()
     
     keep_alive()
-    # ... ሌላው የ bot.polling ኮድ ይቀጥላል
+    
+    # ⚠️ ማሳሰቢያ፦ እነዚህ መስመሮች ወደ ግራ ተለጥፈው ይጻፉ
     bot.remove_webhook()
+    
     while True:
-        try: bot.polling(none_stop=True, interval=1, timeout=20)
-        except: time.sleep(5)
+        try:
+            bot.polling(none_stop=True, interval=1, timeout=20)
+        except Exception as e:
+            import time
+            time.sleep(5)
