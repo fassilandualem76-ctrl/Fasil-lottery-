@@ -294,9 +294,20 @@ def callback_listener(call):
         m = bot.send_message(call.from_user.id, "❌ ውድቅ የተደረገበትን ምክንያት ይጻፉ፦")
         bot.register_next_step_handler(m, finalize_dec, target)
     elif call.data.startswith('select_'): handle_selection(call)
-    elif call.data.startswith('pick_'):
-        _, bid, num = call.data.split('_')
-        finalize_reg_inline(call, bid, num)
+        elif call.data.startswith('pick_'):
+        parts = call.data.split('_')
+        # አራት ነገሮችን (pick, bid, num, uid) መለየት አለበት
+        bid = parts
+        num = parts
+        target_uid = parts
+        
+        # የሌላ ሰው ምርጫ እንዳይነካ ማረጋገጫ
+        if str(call.from_user.id) != target_uid:
+            bot.answer_callback_query(call.id, "⚠️ ይህ የእርስዎ ምርጫ አይደለም!", show_alert=True)
+            return
+            
+        finalize_reg_inline(call, bid, num, target_uid)
+
     elif call.data == "lookup_winner" and is_admin:
         m = bot.send_message(call.from_user.id, "አሸናፊ ለመፈለግ ሰሌዳ እና ቁጥር ይጻፉ (ለምሳሌ: 2-13)፦")
         bot.register_next_step_handler(m, process_lookup)
@@ -382,13 +393,31 @@ def handle_selection(call):
     markup.add(*btns)
     bot.edit_message_text(f"🎰 <b>ሰሌዳ {bid}</b>\n💰 ቀሪ ሂሳብ፦ {user['wallet']} ብር\n\nቁጥር ይምረጡ፦", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
-def finalize_reg_inline(call, bid, num):
-    uid = str(call.message.chat.id); user = get_user(uid); board = data["boards"][bid]
-    if user["wallet"] < board["price"]: bot.answer_callback_query(call.id, "⚠️ በቂ ሂሳብ የሎትም!"); return
+def finalize_reg_inline(call, bid, num, uid):
+    user = get_user(uid)
+    board = data["boards"][bid]
+    if user["wallet"] < board["price"]: 
+        bot.answer_callback_query(call.id, "⚠️ በቂ ሂሳብ የሎትም!")
+        return
+    
     data["users"][uid]["wallet"] -= board["price"]
     board["slots"][num] = user["name"]
-    save_data(); update_group_board(bid); bot.answer_callback_query(call.id, f"✅ ቁጥር {num} ተመርጧል!")
+    save_data()
+    update_group_board(bid)
+    bot.answer_callback_query(call.id, f"✅ ቁጥር {num} ተመርጧል!")
     
+    # ብር ካለው በተኖቹን በድጋሚ እንዲመርጥ ማሳየት
+    if user["wallet"] >= board["price"]:
+        new_markup = types.InlineKeyboardMarkup(row_width=5)
+        btns = [types.InlineKeyboardButton(str(i), callback_data=f"pick_{bid}_{i}_{uid}") 
+                for i in range(1, board["max"] + 1) if str(i) not in board["slots"]]
+        new_markup.add(*btns)
+        bot.edit_message_reply_markup(GROUP_ID, call.message.message_id, reply_markup=new_markup)
+    else:
+        # ብር ካለቀ በተኖቹን ማጥፋት
+        bot.delete_message(GROUP_ID, call.message.message_id)
+        bot.send_message(GROUP_ID, f"✅ <a href='tg://user?id={uid}'>ተጫዋች</a> ምዝገባዎ ተጠናቋል።", parse_mode="HTML")
+
     # --- አውቶማቲክ ማሳሰቢያ ---
     remaining = board["max"] - len(board["slots"])
     milestones = [35, 20, 10, 5, 2]
@@ -421,14 +450,35 @@ def reset_menu(call):
     for bid in data["boards"]: markup.add(types.InlineKeyboardButton(f"Reset {bid}", callback_data=f"doreset_{bid}"))
     bot.send_message(call.from_user.id, "የትኛው ሰሌዳ ይጽዳ?", reply_markup=markup)
 
-def finalize_dec(message, target): bot.send_message(target, f"❌ ደረሰኝዎ ውድቅ ሆኗል። ምክንያት፦ {message.text}")
-
-def update_board_value(message, bid, action):
+def finalize_app(message, target):
     try:
-        if action == "price": data["boards"][bid]["price"] = int(message.text)
-        else: data["boards"][bid]["prize"] = message.text
-        save_data(); bot.send_message(message.chat.id, "✅ ተቀይሯል!"); update_group_board(bid)
-    except: bot.send_message(message.chat.id, "⚠️ ስህተት!")
+        amt = int(message.text)
+        uid = str(target)
+        user = get_user(uid)
+        user["wallet"] += amt
+        
+        # ስሙን ከቴሌግራም መውሰድ
+        try:
+            chat_info = bot.get_chat(uid)
+            user["name"] = (chat_info.first_name[:5]) if chat_info.first_name else "ተጫዋች"
+        except: user["name"] = "ተጫዋች"
+        save_data()
+        
+        bot.send_message(uid, f"✅ <b>{amt} ብር ተጨምሯል!</b>\n💰 ቀሪ ሂሳብ፦ {user['wallet']} ብር")
+        
+        active_boards = [bid for bid, info in data["boards"].items() if info["active"]]
+        if len(active_boards) == 1:
+            # አንድ ሰሌዳ ብቻ ካለ ወዲያውኑ ቁጥር ይዘርጋለት
+            bid = active_boards 
+            send_number_buttons(uid, bid)
+        elif active_boards:
+            # ከአንድ በላይ ካለ እንዲመርጥ ግሩፑ ላይ በተን መላክ
+            markup = types.InlineKeyboardMarkup()
+            for b in active_boards:
+                markup.add(types.InlineKeyboardButton(f"🎰 ሰሌዳ {b}", callback_data=f"select_{b}_{uid}"))
+            bot.send_message(GROUP_ID, f"🔔 <a href='tg://user?id={uid}'>ተጫዋች</a> ክፍያዎ ጸድቋል! ሰሌዳ ይምረጡ፦", reply_markup=markup)
+    except:
+        bot.send_message(message.chat.id, "⚠️ ቁጥር ብቻ ያስገቡ!")
 
 if __name__ == "__main__":
     # ለጊዜው ይህንን ጨምር (አንድ ጊዜ Deploy ካደረግክ በኋላ መልሰህ ብታጠፋው ይሻላል)
