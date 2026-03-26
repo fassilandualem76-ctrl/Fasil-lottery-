@@ -147,7 +147,6 @@ def update_group_board(b_id):
         bot.pin_chat_message(GROUP_ID, m.message_id)
         data["pinned_msgs"][b_id] = m.message_id
         save_data()
-except: pass
 
 def process_manual_reg(message):
     try:
