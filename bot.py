@@ -391,6 +391,18 @@ def update_board_value(message, bid, action):
         save_data(); bot.send_message(message.chat.id, "✅ ተቀይሯል!"); update_group_board(bid)
     except: bot.send_message(message.chat.id, "⚠️ ስህተት!")
 
+def send_number_buttons(chat_id, bid):
+    board = data["boards"][bid]
+    markup = types.InlineKeyboardMarkup(row_width=5)
+    
+    # በሰሌዳው ውስጥ ያልተያዙ ቁጥሮችን ብቻ Button ያደርጋል
+    btns = [types.InlineKeyboardButton(str(i), callback_data=f"pick_{bid}_{i}") 
+            for i in range(1, board["max"] + 1) if str(i) not in board["slots"]]
+    
+    markup.add(*btns)
+    
+    bot.send_message(chat_id, f"🎰 <b>ሰሌዳ {bid}</b>\nየሚፈልጉትን ቁጥር ይጫኑ፦", reply_markup=markup)
+
 if __name__ == "__main__":
     try:
         # 1. ዌብሳይቱን (Flask) በThread ያስጀምረዋል (Render እንዳያጠፋው)
