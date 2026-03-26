@@ -242,69 +242,34 @@ def admin_panel(message):
 
 @bot.message_handler(content_types=['photo', 'text'])
 def handle_receipts(message):
-    if message.chat.type != 'private': return 
-    uid = str(message.chat.id)
+    # ከዚህ በፊት የነበረውን 'private' ብቻ የሚለውን ገደብ አጥፍተነዋል
+    uid = str(message.from_user.id)
+    uname = message.from_user.first_name
+    
+    # ቦቱ ለራሱ መልዕክት እንዳይመልስ
+    if message.from_user.is_bot: return
+    
+    # ትዕዛዞችን እንዳያስተጓጉል
     if message.text in ["🎮 ሰሌዳ ምረጥ", "👤 ፕሮፋይል", "⚙️ Admin Settings", "🎫 የያዝኳቸው ቁጥሮች"]: return
-    bot.send_message(uid, "⏳ <b>ደረሰኝዎ ደርሶኛል...</b>\nእባክዎ እስኪረጋገጥ ይጠብቁ። 🙏")
+
+    # ደረሰኝ መሆኑን ለማወቅ (ፎቶ ካለው ወይም ጽሁፍ ከሆነ)
     markup = types.InlineKeyboardMarkup()
-    markup.row(types.InlineKeyboardButton("✅ አፅድቅ", callback_data=f"approve_{uid}"),
-               types.InlineKeyboardButton("❌ ውድቅ", callback_data=f"decline_{uid}"))
-    cap = f"📩 <b>አዲስ ደረሰኝ</b>\n👤 <b>ከ፦</b> {message.from_user.first_name}\n🆔 <b>ID፦</b> <code>{uid}</code>"
+    markup.row(types.InlineKeyboardButton("✅ አፅድቅ (Approve)", callback_data=f"approve_{uid}"),
+               types.InlineKeyboardButton("❌ ውድቅ (Decline)", callback_data=f"decline_{uid}"))
+    
+    cap = f"📩 <b>አዲስ ደረሰኝ (ከግሩፕ)</b>\n👤 <b>ከ፦</b> {uname}\n🆔 <b>ID፦</b> <code>{uid}</code>"
+    
+    # ለአድሚኖቹ እንዲረጋገጥ ይላካል
     for adm in ADMIN_IDS:
         try:
-            if message.photo: bot.send_photo(adm, message.photo[-1].file_id, caption=cap, reply_markup=markup)
-            else: bot.send_message(adm, f"{cap}\n📝 <b>ዝርዝር፦</b>\n<code>{message.text}</code>", reply_markup=markup)
+            if message.photo:
+                bot.send_photo(adm, message.photo[-1].file_id, caption=cap, reply_markup=markup)
+            else:
+                bot.send_message(adm, f"{cap}\n📝 <b>ዝርዝር፦</b>\n<code>{message.text}</code>", reply_markup=markup)
         except: pass
-
-@bot.callback_query_handler(func=lambda call: True)
-def callback_listener(call):
-    is_admin = call.from_user.id in ADMIN_IDS
-    if call.data.startswith('approve_') and is_admin:
-        target = call.data.split('_')[1]
-        m = bot.send_message(call.from_user.id, f"💵 ለ ID {target} የሚጨመረውን ብር ይጻፉ፦")
-        bot.register_next_step_handler(m, finalize_app, target)
-    elif call.data.startswith('decline_') and is_admin:
-        target = call.data.split('_')[1]
-        m = bot.send_message(call.from_user.id, "❌ ውድቅ የተደረገበትን ምክንያት ይጻፉ፦")
-        bot.register_next_step_handler(m, finalize_dec, target)
-    elif call.data.startswith('select_'): handle_selection(call)
-    elif call.data.startswith('pick_'):
-        _, bid, num = call.data.split('_')
-        finalize_reg_inline(call, bid, num)
-    elif call.data == "lookup_winner" and is_admin:
-        m = bot.send_message(call.from_user.id, "አሸናፊ ለመፈለግ ሰሌዳ እና ቁጥር ይጻፉ (ለምሳሌ: 2-13)፦")
-        bot.register_next_step_handler(m, process_lookup)
-    elif call.data == "admin_manage" and is_admin: manage_menu(call)
-    elif call.data.startswith('edit_') and is_admin: edit_board(call)
-    elif call.data.startswith('toggle_') and is_admin:
-        bid = call.data.split('_')[1]
-        data["boards"][bid]["active"] = not data["boards"][bid]["active"]
-        save_data(); edit_board(call)
-    elif call.data.startswith('set_') and is_admin:
-        _, action, bid = call.data.split('_')
-        m = bot.send_message(call.from_user.id, f"የሰሌዳ {bid} አዲስ ዋጋ/ሽልማት ይጻፉ፦")
-        bot.register_next_step_handler(m, update_board_value, bid, action)
-        
-        # በአካል ለመመዝገብ ሲነካ
-    elif call.data == "admin_manual_reg" and is_admin:
-        m = bot.send_message(call.from_user.id, "📝 <b>በአካል መመዝገቢያ</b>\n\nይህን ይከተሉ፦ <code>ሰሌዳ-ቁጥር-ስም</code>\n(ለምሳሌ: 1-15-አበበ)")
-        bot.register_next_step_handler(m, process_manual_reg)
-
-    # ከክፍያ በኋላ ግሩፕ ላይ ሰሌዳ ሲመርጥ
-    elif call.data.startswith('select_') and len(call.data.split('_')) == 3:
-        _, bid, target_uid = call.data.split('_')
-        if str(call.from_user.id) != target_uid:
-            bot.answer_callback_query(call.id, "⚠️ ይህ ምርጫ የእርስዎ አይደለም!", show_alert=True)
-            return
-        # ወደ ቁጥር መምረጫ ይወስደዋል (ቀድሞ ያለህ handle_selection እንዲሰራ)
-        call.data = f"select_{bid}" 
-        handle_selection(call)
-
-    elif call.data == "admin_reset" and is_admin: reset_menu(call)
-    elif call.data.startswith('doreset_') and is_admin:
-        bid = call.data.split('_')[1]
-        data["boards"][bid]["slots"] = {}; data["pinned_msgs"][bid] = None
-        save_data(); bot.answer_callback_query(call.id, "ሰሌዳው ጸድቷል!"); update_group_board(bid)
+    
+    # ደንበኛው ግሩፕ ላይ ፎቶ ሲልክ የሚሰጠው ምላሽ
+    bot.reply_to(message, "⏳ <b>ደረሰኝዎ ደርሶኛል!</b> አድሚን እስኪያጸድቅ ድረስ እባክዎ ይጠብቁ። 🙏")
 
 def finalize_app(message, target):
     try:
@@ -314,17 +279,19 @@ def finalize_app(message, target):
         user["wallet"] += amt
         save_data()
         
-        bot.send_message(target, f"✅ <b>{amt} ብር ተረጋግጧል!</b>")
+        # ለአድሚኑ ማረጋገጫ
+        bot.send_message(message.chat.id, f"✅ ለ {uid} {amt} ብር ተጨምሯል።")
         
-        # ደንበኛው ግሩፕ ላይ ሰሌዳ እንዲመርጥ ጥሪ ያደርጋል
+        # ለደንበኛው ግሩፕ ላይ የቁጥር መምረጫውን "ዝርግፍ" እናድርግለት
         active_boards = [bid for bid, info in data["boards"].items() if info["active"]]
-        markup = types.InlineKeyboardMarkup()
+        markup = types.InlineKeyboardMarkup(row_width=1)
         for bid in active_boards:
-            markup.add(types.InlineKeyboardButton(f"ሰሌዳ {bid} ይምረጡ", callback_data=f"select_{bid}_{uid}"))
+            # እዚህ ጋር 'select_ሰሌዳID_የተጠቃሚID' በሚል መልክ እናስተላልፋለን
+            markup.add(types.InlineKeyboardButton(f"🎰 ሰሌዳ {bid} ላይ ቁጥር ለመምረጥ እዚህ ይጫኑ", callback_data=f"select_{bid}_{uid}"))
             
-        bot.send_message(GROUP_ID, f"✅ <a href='tg://user?id={uid}'>ተጠቃሚ</a> ክፍያዎ ጸድቋል! እባክዎ ከታች ሰሌዳ በመምረጥ ቁጥር ይያዙ፦", reply_markup=markup)
-    except: 
-        bot.send_message(message.chat.id, "⚠️ ስህተት! ቁጥር ብቻ ይጻፉ።")
+        bot.send_message(GROUP_ID, f"🎉 <a href='tg://user?id={uid}'>ተጠቃሚ</a> ክፍያዎ ተረጋግጧል!\n💰 <b>የአሁኑ ቀሪ ሂሳብዎ፦ {user['wallet']} ብር</b>\n\nእባክዎ መጫወት የሚፈልጉበትን ሰሌዳ ይምረጡ፦", reply_markup=markup)
+    except Exception as e:
+        bot.send_message(message.chat.id, f"⚠️ ስህተት፦ {e}")
 
 def save_name(message, uid):
     data["users"][str(uid)]["name"] = message.text[:5]
